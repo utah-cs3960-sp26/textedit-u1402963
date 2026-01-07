@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QAction
 
+from editor.file_manager import FileManager
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -13,6 +15,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Hello World")
         self.resize(800, 600)
         self.current_file = None
+        self.file_manager = FileManager()
 
         self._setup_central_widget()
         self._setup_menu()
@@ -26,7 +29,6 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("&File")
 
         open_action = QAction("&Open", self)
-        #TODO: add help menu later with shortcuts explained
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
@@ -54,8 +56,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            content = self.file_manager.read_file(file_path)
             self.text_edit.setPlainText(content)
             self.current_file = file_path
             self.setWindowTitle(f"Hello World - {file_path}")
@@ -77,8 +78,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(self.text_edit.toPlainText())
+            self.file_manager.write_file(file_path, self.text_edit.toPlainText())
             self.current_file = file_path
             self.setWindowTitle(f"Hello World - {file_path}")
         except PermissionError:
