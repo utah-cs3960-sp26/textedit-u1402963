@@ -26,6 +26,7 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("&File")
 
         open_action = QAction("&Open", self)
+        #TODO: add help menu later with shortcuts explained
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
