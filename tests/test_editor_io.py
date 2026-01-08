@@ -80,3 +80,15 @@ class TestFileManager:
         result = FileManager.read_file(str(file_path))
 
         assert result == original
+
+    def test_read_empty_file(self, tmp_path):
+        file_path = tmp_path / "empty.txt"
+        file_path.write_text("", encoding="utf-8")
+
+        content = FileManager.read_file(str(file_path))
+
+        assert content == ""
+
+    def test_write_to_directory_raises(self, tmp_path):
+        with pytest.raises((IsADirectoryError, PermissionError, OSError)):
+            FileManager.write_file(str(tmp_path), "content")

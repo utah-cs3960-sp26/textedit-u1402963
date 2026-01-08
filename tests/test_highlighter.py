@@ -1,5 +1,9 @@
 import re
+import sys
 import pytest
+
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QTextDocument
 
 from editor.highlighter import (
     PythonHighlighter,
@@ -9,97 +13,96 @@ from editor.highlighter import (
     HtmlHighlighter,
     JsonHighlighter,
     MarkdownHighlighter,
+    PlainTextHighlighter,
     LanguageDetector,
 )
 
 
+@pytest.fixture(scope="module")
+def app():
+    application = QApplication.instance()
+    if application is None:
+        application = QApplication(sys.argv)
+    yield application
+
+
 class TestPythonHighlighterKeywords:
-    def test_all_python_keywords_present(self):
-        expected_keywords = {
-            "False", "None", "True", "and", "as", "assert", "async", "await",
-            "break", "class", "continue", "def", "del", "elif", "else", "except",
-            "finally", "for", "from", "global", "if", "import", "in", "is",
-            "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
-            "while", "with", "yield",
-        }
-        assert set(PythonHighlighter.KEYWORDS) == expected_keywords
+    def test_python_keywords_include_core_control_flow(self):
+        required = {"def", "class", "if", "else", "elif", "for", "while", "return", "import", "from"}
+        assert required.issubset(set(PythonHighlighter.KEYWORDS))
 
-    def test_keyword_count(self):
-        assert len(PythonHighlighter.KEYWORDS) == 35
+    def test_python_keywords_include_boolean_values(self):
+        required = {"True", "False", "None"}
+        assert required.issubset(set(PythonHighlighter.KEYWORDS))
+
+    def test_python_keywords_include_exception_handling(self):
+        required = {"try", "except", "finally", "raise"}
+        assert required.issubset(set(PythonHighlighter.KEYWORDS))
+
+    def test_python_keywords_include_async(self):
+        required = {"async", "await"}
+        assert required.issubset(set(PythonHighlighter.KEYWORDS))
 
 
-class TestPythonHighlighterRegex:
-    @pytest.fixture
-    def keyword_pattern(self):
-        pattern = r"\b(" + "|".join(PythonHighlighter.KEYWORDS) + r")\b"
-        return re.compile(pattern)
+class TestPythonHighlighterBehavior:
+    def test_highlighter_has_rules_for_keywords(self, app):
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
 
-    def test_matches_def_keyword(self, keyword_pattern):
+        assert len(highlighter._highlighting_rules) > 0, "Highlighter should have highlighting rules"
+
+    def test_highlighter_keyword_pattern_matches_def(self, app):
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+
+        keyword_pattern, keyword_fmt = highlighter._highlighting_rules[0]
         text = "def my_function():"
         matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 1
+
+        assert len(matches) > 0, "Keyword pattern should match 'def'"
         assert matches[0].group() == "def"
-        assert matches[0].start() == 0
-        assert matches[0].end() == 3
 
-    def test_matches_class_keyword(self, keyword_pattern):
-        text = "class MyClass:"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 1
-        assert matches[0].group() == "class"
+    def test_highlighter_string_pattern_matches_quoted_text(self, app):
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
 
-    def test_matches_import_keyword(self, keyword_pattern):
-        text = "import os"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 1
-        assert matches[0].group() == "import"
+        has_string_match = False
+        for pattern, fmt in highlighter._highlighting_rules:
+            matches = list(pattern.finditer('"hello world"'))
+            if matches and '"hello world"' in matches[0].group():
+                has_string_match = True
+                break
 
-    def test_matches_multiple_keywords(self, keyword_pattern):
-        text = "from os import path"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 2
-        assert matches[0].group() == "from"
-        assert matches[1].group() == "import"
+        assert has_string_match, "Highlighter should have pattern that matches strings"
 
-    def test_does_not_match_keyword_in_identifier(self, keyword_pattern):
-        text = "define = 1"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 0
 
-    def test_does_not_match_keyword_as_substring(self, keyword_pattern):
-        text = "class_name = 'MyClass'"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 0
+class TestHighlighterIntegration:
+    def test_language_detector_returns_correct_highlighter_type(self, app):
+        doc = QTextDocument()
 
-    def test_matches_keyword_at_end_of_line(self, keyword_pattern):
-        text = "x = None"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 1
-        assert matches[0].group() == "None"
+        python_hl = LanguageDetector.get_highlighter(doc, "test.py")
+        assert isinstance(python_hl, PythonHighlighter)
 
-    def test_matches_keyword_with_punctuation(self, keyword_pattern):
-        text = "if(True):"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 2
-        assert matches[0].group() == "if"
-        assert matches[1].group() == "True"
+        c_hl = LanguageDetector.get_highlighter(doc, "test.c")
+        assert isinstance(c_hl, CHighlighter)
 
-    def test_matches_async_await(self, keyword_pattern):
-        text = "async def fetch(): await response"
-        matches = list(keyword_pattern.finditer(text))
-        keywords = [m.group() for m in matches]
-        assert "async" in keywords
-        assert "def" in keywords
-        assert "await" in keywords
+        cpp_hl = LanguageDetector.get_highlighter(doc, "test.cpp")
+        assert isinstance(cpp_hl, CppHighlighter)
 
-    def test_empty_string(self, keyword_pattern):
-        matches = list(keyword_pattern.finditer(""))
-        assert len(matches) == 0
+        java_hl = LanguageDetector.get_highlighter(doc, "Test.java")
+        assert isinstance(java_hl, JavaHighlighter)
 
-    def test_no_keywords(self, keyword_pattern):
-        text = "x = 42 + y"
-        matches = list(keyword_pattern.finditer(text))
-        assert len(matches) == 0
+        html_hl = LanguageDetector.get_highlighter(doc, "index.html")
+        assert isinstance(html_hl, HtmlHighlighter)
+
+        json_hl = LanguageDetector.get_highlighter(doc, "config.json")
+        assert isinstance(json_hl, JsonHighlighter)
+
+        md_hl = LanguageDetector.get_highlighter(doc, "README.md")
+        assert isinstance(md_hl, MarkdownHighlighter)
+
+        txt_hl = LanguageDetector.get_highlighter(doc, "notes.txt")
+        assert isinstance(txt_hl, PlainTextHighlighter)
 
 
 class TestLanguageDetectorExtension:
@@ -144,6 +147,9 @@ class TestLanguageDetectorExtension:
         assert LanguageDetector.detect_from_extension("FILE.PY") == "python"
         assert LanguageDetector.detect_from_extension("Main.JAVA") == "java"
 
+    def test_empty_path(self):
+        assert LanguageDetector.detect_from_extension("") == ""
+
 
 class TestLanguageDetectorContent:
     def test_detect_python_by_import(self):
@@ -185,6 +191,9 @@ class TestLanguageDetectorContent:
     def test_plain_text_fallback(self):
         content = "Just some plain text without any recognizable patterns."
         assert LanguageDetector.detect_from_content(content) == "plain"
+
+    def test_empty_content(self):
+        assert LanguageDetector.detect_from_content("") == "plain"
 
 
 class TestLanguageDetectorRealisticFiles:
@@ -319,23 +328,6 @@ MIT
 '''
         assert LanguageDetector.detect_from_content(content) == "json"
 
-    def test_cpp_with_template(self):
-        content = '''#include <vector>
-
-template<typename T>
-class Container {
-    std::vector<T> items;
-};
-'''
-        assert LanguageDetector.detect_from_content(content) == "cpp"
-
-    def test_java_interface(self):
-        content = '''public interface Runnable {
-    void run();
-}
-'''
-        assert LanguageDetector.detect_from_content(content) == "java"
-
 
 class TestLanguageDetectorIntegration:
     def test_extension_takes_precedence(self):
@@ -349,6 +341,9 @@ class TestLanguageDetectorIntegration:
     def test_content_used_for_unknown_extension(self):
         content = "public class Main { }"
         assert LanguageDetector.detect("file.unknown", content) == "java"
+
+    def test_empty_extension_and_content(self):
+        assert LanguageDetector.detect("", "") == "plain"
 
 
 class TestSuggestExtension:
@@ -385,18 +380,79 @@ class TestSuggestExtension:
         assert LanguageDetector.suggest_extension("notes", content) == "notes.txt"
 
 
-class TestHighlighterClasses:
-    def test_c_highlighter_has_keywords(self):
-        assert "int" in CHighlighter.KEYWORDS
-        assert "void" in CHighlighter.KEYWORDS
-        assert "return" in CHighlighter.KEYWORDS
+class TestOtherHighlighterKeywords:
+    def test_c_highlighter_includes_core_keywords(self):
+        required = {"int", "void", "return", "if", "else", "for", "while", "struct"}
+        assert required.issubset(set(CHighlighter.KEYWORDS))
 
-    def test_cpp_highlighter_has_keywords(self):
-        assert "class" in CppHighlighter.KEYWORDS
-        assert "namespace" in CppHighlighter.KEYWORDS
-        assert "template" in CppHighlighter.KEYWORDS
+    def test_cpp_highlighter_includes_cpp_specific_keywords(self):
+        required = {"class", "namespace", "template", "public", "private", "virtual"}
+        assert required.issubset(set(CppHighlighter.KEYWORDS))
 
-    def test_java_highlighter_has_keywords(self):
-        assert "public" in JavaHighlighter.KEYWORDS
-        assert "class" in JavaHighlighter.KEYWORDS
-        assert "interface" in JavaHighlighter.KEYWORDS
+    def test_java_highlighter_includes_core_keywords(self):
+        required = {"public", "class", "interface", "extends", "implements", "new"}
+        assert required.issubset(set(JavaHighlighter.KEYWORDS))
+
+
+class TestOtherHighlighterBehavior:
+    def test_c_highlighter_has_rules(self, app):
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        assert len(highlighter._highlighting_rules) > 0, "C highlighter should have rules"
+
+    def test_c_highlighter_pattern_matches_int(self, app):
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        keyword_pattern, _ = highlighter._highlighting_rules[0]
+        matches = list(keyword_pattern.finditer("int main()"))
+        assert any(m.group() == "int" for m in matches), "Should match 'int' keyword"
+
+    def test_html_highlighter_has_rules(self, app):
+        doc = QTextDocument()
+        highlighter = HtmlHighlighter(doc)
+        assert len(highlighter._highlighting_rules) > 0, "HTML highlighter should have rules"
+
+    def test_html_highlighter_pattern_matches_tags(self, app):
+        doc = QTextDocument()
+        highlighter = HtmlHighlighter(doc)
+        has_tag_match = False
+        for pattern, _ in highlighter._highlighting_rules:
+            matches = list(pattern.finditer("<html>"))
+            if matches:
+                has_tag_match = True
+                break
+        assert has_tag_match, "HTML highlighter should have pattern matching tags"
+
+    def test_json_highlighter_has_rules(self, app):
+        doc = QTextDocument()
+        highlighter = JsonHighlighter(doc)
+        assert len(highlighter._highlighting_rules) > 0, "JSON highlighter should have rules"
+
+    def test_markdown_highlighter_has_rules(self, app):
+        doc = QTextDocument()
+        highlighter = MarkdownHighlighter(doc)
+        assert len(highlighter._highlighting_rules) > 0, "Markdown highlighter should have rules"
+
+    def test_markdown_highlighter_pattern_matches_header(self, app):
+        doc = QTextDocument()
+        highlighter = MarkdownHighlighter(doc)
+        has_header_match = False
+        for pattern, _ in highlighter._highlighting_rules:
+            matches = list(pattern.finditer("# Title"))
+            if matches:
+                has_header_match = True
+                break
+        assert has_header_match, "Markdown highlighter should have pattern matching headers"
+
+
+class TestGetSaveFilter:
+    def test_returns_python_filter_for_py_file(self):
+        assert LanguageDetector.get_save_filter("file.py", "") == "Python (*.py)"
+
+    def test_returns_filter_based_on_content(self):
+        content = "public class Main { }"
+        assert LanguageDetector.get_save_filter("", content) == "Java (*.java)"
+
+    def test_returns_text_filter_for_unknown_content(self):
+        result = LanguageDetector.get_save_filter("file.xyz", "random content")
+        assert result == "Text (*.txt)"

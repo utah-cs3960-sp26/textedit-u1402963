@@ -10,9 +10,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QAction, QCloseEvent
 from PyQt6.QtCore import Qt
 
-from editor.file_manager import FileManager
-from editor.highlighter import LanguageDetector
+from editor.highlighters.detector import LanguageDetector
 from editor.code_editor import CodeEditor
+from editor.models.document import DocumentModel
+from editor.controllers.file_controller import FileController
 
 
 class MainWindow(QMainWindow):
@@ -20,11 +21,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Text Editor 9000")
         self.resize(800, 600)
-        self.current_file = None
-        self.file_manager = FileManager()
+
+        self._document = DocumentModel()
+        self._controller = FileController(self._document)
         self.highlighter = None
-        self._is_modified = False
-        self._original_content = ""
 
         self._setup_central_widget()
         self._setup_highlighter()
@@ -32,6 +32,33 @@ class MainWindow(QMainWindow):
         self._setup_status_label()
 
         self.text_edit.textChanged.connect(self._mark_modified)
+
+    @property
+    def current_file(self):
+        return self._document.file_path
+
+    @current_file.setter
+    def current_file(self, value):
+        self._document.file_path = value
+
+    @property
+    def _is_modified(self):
+        return self._document.is_modified
+
+    @_is_modified.setter
+    def _is_modified(self, value):
+        if value:
+            self._document._current_content = self.text_edit.toPlainText()
+        else:
+            self._document.mark_saved()
+
+    @property
+    def _original_content(self):
+        return self._document.original_content
+
+    @_original_content.setter
+    def _original_content(self, value):
+        self._document._original_content = value
 
     def _setup_central_widget(self):
         self.text_edit = CodeEditor()
@@ -70,27 +97,27 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
-        
+
         left_spacer = QWidget()
         left_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(left_spacer)
-        
+
         self._status_label = QLabel("Saved")
         self._status_label.setStyleSheet("color: #228B22; font-weight: bold;")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toolbar.addWidget(self._status_label)
-        
+
         right_spacer = QWidget()
         right_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(right_spacer)
 
     def _mark_modified(self):
         current_content = self.text_edit.toPlainText()
-        self._is_modified = current_content != self._original_content
+        self._document.current_content = current_content
         self._update_status()
 
     def _update_status(self):
-        if self._is_modified:
+        if self._document.is_modified:
             self._status_label.setText("Unsaved")
             self._status_label.setStyleSheet("color: #8B0000; font-weight: bold;")
         else:
@@ -100,9 +127,9 @@ class MainWindow(QMainWindow):
 
     def _update_title(self):
         base_title = "Text Editor 9000"
-        if self.current_file:
-            base_title = f"Text Editor 9000 - {self.current_file}"
-        if self._is_modified:
+        if self._document.file_path:
+            base_title = f"Text Editor 9000 - {self._document.file_path}"
+        if self._document.is_modified:
             self.setWindowTitle(f"* {base_title}")
         else:
             self.setWindowTitle(base_title)
@@ -125,11 +152,11 @@ class MainWindow(QMainWindow):
             return "cancel"
 
     def closeEvent(self, event: QCloseEvent):
-        if self._is_modified:
+        if self._document.is_modified:
             result = self._prompt_save_changes()
             if result == "save":
                 self.save_file()
-                if self._is_modified:
+                if self._document.is_modified:
                     event.ignore()
                     return
             elif result == "cancel":
@@ -138,11 +165,11 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def open_file(self):
-        if self._is_modified:
+        if self._document.is_modified:
             result = self._prompt_save_changes()
             if result == "save":
                 self.save_file()
-                if self._is_modified:
+                if self._document.is_modified:
                     return
             elif result == "cancel":
                 return
@@ -156,36 +183,21 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        try:
-            content = self.file_manager.read_file(file_path)
+        success, content, error_msg = self._controller.open_file(file_path)
+        if success:
             self.text_edit.setPlainText(content)
-            self.current_file = file_path
-            self._original_content = content
-            self._is_modified = False
             self._update_status()
             self._setup_highlighter(file_path, content)
-        except FileNotFoundError:
-            QMessageBox.critical(self, "Error", f"File not found: {file_path}")
-        except PermissionError:
-            QMessageBox.critical(self, "Error", f"Permission denied: {file_path}")
-        except UnicodeDecodeError:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Could not open file: {file_path}\n\nThis appears to be a binary file. Only text files are supported.",
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open file: {e}")
+        else:
+            QMessageBox.critical(self, "Error", error_msg)
 
     def save_file(self):
         content = self.text_edit.toPlainText()
-        
-        if self.current_file:
-            file_path = self.current_file
+
+        if self._document.file_path:
+            file_path = self._document.file_path
         else:
-            suggested_filter = LanguageDetector.get_save_filter(
-                self.current_file or "", content
-            )
+            suggested_filter = self._controller.get_save_filter(content)
             all_filters = "All Files (*);;Python (*.py);;C Source (*.c);;C++ Source (*.cpp);;C Header (*.h);;C++ Header (*.hpp);;Java (*.java);;HTML (*.html);;HTM (*.htm);;JSON (*.json);;Markdown (*.md);;Text (*.txt)"
 
             file_path, _ = QFileDialog.getSaveFileName(
@@ -198,16 +210,9 @@ class MainWindow(QMainWindow):
             if not file_path:
                 return
 
-            file_path = LanguageDetector.suggest_extension(file_path, content)
-
-        try:
-            self.file_manager.write_file(file_path, content)
-            self.current_file = file_path
-            self._original_content = content
-            self._is_modified = False
+        success, error_msg = self._controller.save_file(file_path, content)
+        if success:
             self._update_status()
-            self._setup_highlighter(file_path)
-        except PermissionError:
-            QMessageBox.critical(self, "Error", f"Permission denied: {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not save file: {e}")
+            self._setup_highlighter(self._document.file_path)
+        else:
+            QMessageBox.critical(self, "Error", error_msg)

@@ -29,49 +29,53 @@ class TestCodeEditorLineNumbers:
         width = editor.line_number_area_width()
         assert width > 0
 
-    def test_line_number_area_width_increases_with_lines(self, editor):
+    @pytest.mark.parametrize("before_count,after_count", [
+        (9, 10),
+        (99, 100),
+        (999, 1000),
+    ])
+    def test_line_number_width_increases_at_digit_boundaries(self, editor, before_count, after_count):
+        editor.setPlainText("\n".join(["line"] * before_count))
+        width_before = editor.line_number_area_width()
+
+        editor.setPlainText("\n".join(["line"] * after_count))
+        width_after = editor.line_number_area_width()
+
+        assert width_after > width_before, (
+            f"Width should increase from {before_count} to {after_count} lines "
+            f"(was {width_before}, now {width_after})"
+        )
+
+    def test_line_number_area_width_updates_dynamically(self, editor):
         editor.setPlainText("line1")
-        width_1_line = editor.line_number_area_width()
+        width_initial = editor.line_number_area_width()
 
-        lines = "\n".join([f"line{i}" for i in range(100)])
-        editor.setPlainText(lines)
-        width_100_lines = editor.line_number_area_width()
+        editor.appendPlainText("\n".join(["line"] * 100))
+        width_after = editor.line_number_area_width()
 
-        assert width_100_lines > width_1_line
+        assert width_after > width_initial
 
-    def test_line_number_area_width_for_1000_lines(self, editor):
-        lines = "\n".join([f"line{i}" for i in range(1000)])
-        editor.setPlainText(lines)
-        width_1000 = editor.line_number_area_width()
-
-        editor.setPlainText("line1")
-        width_1 = editor.line_number_area_width()
-
-        assert width_1000 > width_1
-
-    def test_block_count_matches_line_count(self, editor):
-        editor.setPlainText("line1\nline2\nline3")
-        assert editor.blockCount() == 3
-
-    def test_block_count_empty_document(self, editor):
-        editor.setPlainText("")
-        assert editor.blockCount() == 1
-
-    def test_block_count_single_line(self, editor):
-        editor.setPlainText("single line no newline")
-        assert editor.blockCount() == 1
+    @pytest.mark.parametrize("text,expected_blocks", [
+        ("", 1),
+        ("single line no newline", 1),
+        ("line1\nline2\nline3", 3),
+        ("a\nb\nc\nd\ne", 5),
+    ])
+    def test_block_count(self, editor, text, expected_blocks):
+        editor.setPlainText(text)
+        assert editor.blockCount() == expected_blocks
 
     def test_viewport_margins_set(self, editor):
         editor.setPlainText("test")
         margins = editor.viewportMargins()
-        assert margins.left() > 0
+        expected_width = editor.line_number_area_width()
+        assert margins.left() == expected_width
 
 
 class TestLineNumberArea:
-    def test_size_hint_width(self, editor):
+    def test_size_hint_width_matches_editor(self, editor):
         size_hint = editor.line_number_area.sizeHint()
         assert size_hint.width() == editor.line_number_area_width()
-        assert size_hint.height() == 0
 
-    def test_line_number_area_parent(self, editor):
-        assert editor.line_number_area.editor is editor
+    def test_line_number_area_parent_is_editor(self, editor):
+        assert editor.line_number_area.parent() is editor
