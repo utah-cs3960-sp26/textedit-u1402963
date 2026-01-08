@@ -1,28 +1,33 @@
 from PyQt6.QtWidgets import (
     QMainWindow,
-    QPlainTextEdit,
     QFileDialog,
     QMessageBox,
 )
 from PyQt6.QtGui import QAction
 
 from editor.file_manager import FileManager
+from editor.highlighter import PythonHighlighter
+from editor.code_editor import CodeEditor
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Hello World")
+        self.setWindowTitle("Text Editor 9000")
         self.resize(800, 600)
         self.current_file = None
         self.file_manager = FileManager()
 
         self._setup_central_widget()
+        self._setup_highlighter()
         self._setup_menu()
 
     def _setup_central_widget(self):
-        self.text_edit = QPlainTextEdit()
+        self.text_edit = CodeEditor()
         self.setCentralWidget(self.text_edit)
+
+    def _setup_highlighter(self):
+        self.highlighter = PythonHighlighter(self.text_edit.document())
 
     def _setup_menu(self):
         menu_bar = self.menuBar()
@@ -59,7 +64,7 @@ class MainWindow(QMainWindow):
             content = self.file_manager.read_file(file_path)
             self.text_edit.setPlainText(content)
             self.current_file = file_path
-            self.setWindowTitle(f"Hello World - {file_path}")
+            self.setWindowTitle(f"Text Editor 9000 - {file_path}")
         except FileNotFoundError:
             QMessageBox.critical(self, "Error", f"File not found: {file_path}")
         except PermissionError:
@@ -80,7 +85,7 @@ class MainWindow(QMainWindow):
         try:
             self.file_manager.write_file(file_path, self.text_edit.toPlainText())
             self.current_file = file_path
-            self.setWindowTitle(f"Hello World - {file_path}")
+            self.setWindowTitle(f"Text Editor 9000 - {file_path}")
         except PermissionError:
             QMessageBox.critical(self, "Error", f"Permission denied: {file_path}")
         except Exception as e:
