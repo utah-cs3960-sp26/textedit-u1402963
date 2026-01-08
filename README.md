@@ -1,17 +1,45 @@
 # textedit-u1402963
 Text editor made using AI assistance for CS3960
 
+
+# R1 - Basic Editor Foundation
+
+## Feature: Basic UI & Architecture
+ I established the core architecture using QPlainTextEdit rather than QTextEdit to ensure better performance with large files. The application follows a modular MVC design, separating the MainWindow (UI) from the FileManager (logic). This separation allowed me to implement unit testing without heavy Qt dependencies. I verified this structure using pytest with 32 tests covering the editor I/O and window initialization.
+
+## Feature: File Operations (Open/Save) 
+The editor currently supports opening and saving text files via the native OS file picker (Ctrl+O / Ctrl+S). While it currently defaults to .txt files, the underlying FileManager class is designed to handle various extensions. I validated this feature by writing tests in test_editor_io.py that simulate file streams to ensure data integrity during save operations.
+
+![alt text](image-1.png)
+
+## Feature: Syntax Highlighting & Line Numbers 
+I implemented a prototype for syntax highlighting using QSyntaxHighlighter with regex patterns to identify Python keywords (currently displaying in bold cyan). To improve usability, I added a dynamic line number gutter. This required creating a custom CodeEditor widget that extends the text edit area to calculate line heights and paint the numbers in a side panel. Tests in test_highlighter.py and test_code_editor.py verify that the highlighting rules apply correctly to input strings.
+
+![alt text](image.png)
+
+## What's Next (R2) 
+Currently, tab scaling is not optimized, and syntax highlighting is limited to Python. In R2, I plan to implement find and replace, allow the editor to open python files, Automatic indentation and bracket and quote matching, A file tree explorer with collapsible folders, as well as potentially going further to add more of the extra features and refinning the current UI.
+
+
+
+
+
+
+
+
+# XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
 # R1 ------------- Human Written Release Notes -------------
 
 In R1 I completed what I would consider the basic prototype featuring Open/Save functionality through the native OS file picker, a very basic UI window with a text editing area, line numbers for quick and easy referance, extremely basic python syntax highlighting, and user friendly error handling. 
 
 The way I approached this project was to ensure I gave AMP the best chances possible to succeed. Since I am not very experianced with purely vibe coding applications I pasted the assignment description into Gemini Pro and asked it how I should go about the project. It provided me with the suggestion to make a project_spec.md file to keep AMP on track (it generated the file for me based off the assignment description). Gemini also gave me step by step prompts that allowed AMP to quickly build the text editor base with good separation of concerns and extensive testing. In the future I will be more hands on for my own educational benefit, but this was a successful experiment in planning with one AI, and then executing with another.
 
-![alt text](image.png)
+
 
 The downsides, currently the editor supports .txt files, but this will be expanded to open and close python files specifically. Tabs are also not scaled appropriately as of now.
 
-![alt text](image-1.png)
+
 
 This is currently the only menu in the editor, but this will change next week as more features are added.
 
