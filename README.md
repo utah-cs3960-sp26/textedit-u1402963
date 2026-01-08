@@ -20,41 +20,7 @@ I implemented a prototype for syntax highlighting using QSyntaxHighlighter with 
 ## What's Next (R2) 
 Currently, tab scaling is not optimized, and syntax highlighting is limited to Python. In R2, I plan to implement find and replace, allow the editor to open python files, Automatic indentation and bracket and quote matching, A file tree explorer with collapsible folders, as well as potentially going further to add more of the extra features and refinning the current UI.
 
-
-
-
-
-
-
-
-# XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
-# R1 ------------- Human Written Release Notes -------------
-
-In R1 I completed what I would consider the basic prototype featuring Open/Save functionality through the native OS file picker, a very basic UI window with a text editing area, line numbers for quick and easy referance, extremely basic python syntax highlighting, and user friendly error handling. 
-
-The way I approached this project was to ensure I gave AMP the best chances possible to succeed. Since I am not very experianced with purely vibe coding applications I pasted the assignment description into Gemini Pro and asked it how I should go about the project. It provided me with the suggestion to make a project_spec.md file to keep AMP on track (it generated the file for me based off the assignment description). Gemini also gave me step by step prompts that allowed AMP to quickly build the text editor base with good separation of concerns and extensive testing. In the future I will be more hands on for my own educational benefit, but this was a successful experiment in planning with one AI, and then executing with another.
-
-
-
-The downsides, currently the editor supports .txt files, but this will be expanded to open and close python files specifically. Tabs are also not scaled appropriately as of now.
-
-
-
-This is currently the only menu in the editor, but this will change next week as more features are added.
-
-# --------------------------------------- AI Generated ----------------------------
-## Release R1 - Basic Editor Foundation
-
-### Features
-- **File Open** (Ctrl+O): Load text files with native file dialog
-- **File Save** (Ctrl+S): Save content to disk with file dialog
-- **Basic UI**: Main window with menu bar and text editing area
-- **Line Numbers**: Dynamic line number gutter that scales with line number length size
-- **Python Syntax Highlighting**: Keywords highlighted in bold cyan
-- **Error Handling**: User-friendly error messages for file operations
-
-### Architecture
+## AI Generated content below
 
 **Project Structure:**
 ```
@@ -83,9 +49,6 @@ Validated using **pytest** (32 tests). Run tests with:
 ```
 set PYTHONPATH=src && python -m pytest tests/ -v
 ```
-
----
-#
 
 R2:
 
