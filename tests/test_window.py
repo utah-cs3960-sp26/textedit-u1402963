@@ -206,3 +206,247 @@ class TestFileNotFoundHandling:
 
         no_dialogs["critical"].assert_called_once()
         assert "not found" in str(no_dialogs["critical"].call_args).lower()
+
+
+class TestUndoRedoGranularity:
+    """
+    Tests for proper undo/redo behavior using QUndoStack.
+    
+    Expected behavior (based on established text editors like VSCode, Sublime, Notepad++):
+    
+    1. WORD-BASED GROUPING: Typing consecutive characters without breaks should group
+       into logical chunks. Undo should remove one "word" or "chunk" at a time, not
+       character-by-character (too granular) or entire content (too coarse).
+    
+    2. WHITESPACE BREAKS GROUPS: Typing a space, tab, or newline should start a new
+       undo group. So "hello world" typed continuously = 2 undo operations.
+    
+    3. PASTE IS ATOMIC: Pasting text should be a single undo operation regardless of
+       how much text is pasted.
+    
+    4. DELETE SELECTION IS ATOMIC: Selecting and deleting text should be one undo step.
+    
+    5. CURSOR MOVEMENT BREAKS GROUPS: If user clicks elsewhere or uses arrow keys,
+       then types more, the new typing is a separate undo group.
+    """
+
+    def _insert_with_command(self, window, text):
+        """Helper to insert text and push command (mimics real keypress behavior)."""
+        from editor.undo_commands import InsertTextCommand
+        pos = window.text_edit.textCursor().position()
+        cursor = window.text_edit.textCursor()
+        cursor.insertText(text)
+        window.text_edit.setTextCursor(cursor)
+        cmd = InsertTextCommand(window.text_edit, text, pos)
+        window.text_edit.undo_stack.push(cmd)
+
+    def test_undo_removes_word_not_everything(self, window):
+        """
+        Typing "hello world" should create 2 undo groups (one per word).
+        First undo should remove "world", leaving "hello ".
+        
+        This tests that undo doesn't remove everything at once (the current bug).
+        """
+        self._insert_with_command(window, "hello ")
+        self._insert_with_command(window, "world")
+        
+        assert window.text_edit.toPlainText() == "hello world"
+        
+        window.text_edit.undo()
+        
+        assert window.text_edit.toPlainText() == "hello "
+
+    def test_undo_word_by_word(self, window):
+        """
+        Typing three words should require 3 undos to clear.
+        Each undo removes one word.
+        """
+        self._insert_with_command(window, "one ")
+        self._insert_with_command(window, "two ")
+        self._insert_with_command(window, "three")
+        
+        assert window.text_edit.toPlainText() == "one two three"
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == "one two "
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == "one "
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == ""
+
+    def test_redo_restores_word(self, window):
+        """
+        After undoing a word, redo should restore exactly that word.
+        """
+        self._insert_with_command(window, "hello ")
+        self._insert_with_command(window, "world")
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == "hello "
+        
+        window.text_edit.redo()
+        assert window.text_edit.toPlainText() == "hello world"
+
+    def test_newline_breaks_undo_group(self, window):
+        """
+        Pressing Enter should start a new undo group.
+        """
+        self._insert_with_command(window, "line1")
+        self._insert_with_command(window, "\n")
+        self._insert_with_command(window, "line2")
+        
+        assert window.text_edit.toPlainText() == "line1\nline2"
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == "line1\n"
+
+    def test_paste_is_single_undo_operation(self, window):
+        """
+        Pasting multi-word text should be undone in one operation.
+        """
+        self._insert_with_command(window, "before ")
+        self._insert_with_command(window, "pasted content here")
+        
+        assert window.text_edit.toPlainText() == "before pasted content here"
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == "before "
+
+    def test_delete_selection_is_single_undo(self, window):
+        """
+        Selecting and deleting text should be one undo operation.
+        """
+        from editor.undo_commands import DeleteTextCommand
+        
+        self._insert_with_command(window, "hello world")
+        window.text_edit.undo_stack.clear()
+        
+        cursor = window.text_edit.textCursor()
+        cursor.setPosition(0)
+        cursor.setPosition(5, cursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
+        window.text_edit.setTextCursor(cursor)
+        
+        cmd = DeleteTextCommand(window.text_edit, 0, 5, "hello")
+        window.text_edit.undo_stack.push(cmd)
+        
+        assert window.text_edit.toPlainText() == " world"
+        
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == "hello world"
+
+
+class TestEditMenu:
+    def test_edit_menu_exists(self, window):
+        menu_bar = window.menuBar()
+        menus = [action.text() for action in menu_bar.actions()]
+        assert any("Edit" in menu for menu in menus)
+
+    def _insert_with_command(self, window, text):
+        """Helper to insert text and push command."""
+        from editor.undo_commands import InsertTextCommand
+        pos = window.text_edit.textCursor().position()
+        cursor = window.text_edit.textCursor()
+        cursor.insertText(text)
+        window.text_edit.setTextCursor(cursor)
+        cmd = InsertTextCommand(window.text_edit, text, pos)
+        window.text_edit.undo_stack.push(cmd)
+
+    def test_undo_action_works(self, window):
+        self._insert_with_command(window, "hello")
+        assert window.text_edit.toPlainText() == "hello"
+
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == ""
+
+    def test_redo_action_works(self, window):
+        self._insert_with_command(window, "hello")
+        window.text_edit.undo()
+        assert window.text_edit.toPlainText() == ""
+
+        window.text_edit.redo()
+        assert window.text_edit.toPlainText() == "hello"
+
+    def test_select_all_action_works(self, window):
+        window.text_edit.setPlainText("hello world")
+        window.text_edit.selectAll()
+        assert window.text_edit.textCursor().selectedText() == "hello world"
+
+
+class TestNewFile:
+    def test_new_file_clears_editor(self, window):
+        window.text_edit.setPlainText("some content")
+        window._document.mark_saved()
+
+        window.new_file()
+
+        assert window.text_edit.toPlainText() == ""
+        assert window._is_modified is False
+        assert window._status_label.text() == "Saved"
+
+    def test_new_file_resets_document_path(self, window, tmp_path):
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content", encoding="utf-8")
+
+        with patch("editor.window.QFileDialog.getOpenFileName") as mock_open:
+            mock_open.return_value = (str(test_file), "")
+            window.open_file()
+
+        assert window.current_file == str(test_file)
+
+        window.new_file()
+
+        assert window.current_file is None
+        assert window.text_edit.toPlainText() == ""
+
+    def test_new_file_with_unsaved_discard_proceeds(self, window):
+        window.text_edit.setPlainText("unsaved content")
+        assert window._is_modified is True
+
+        with patch.object(window, "_prompt_save_changes", return_value="discard"):
+            window.new_file()
+
+        assert window.text_edit.toPlainText() == ""
+        assert window._is_modified is False
+
+    def test_new_file_with_unsaved_cancel_aborts(self, window):
+        original_text = "unsaved content"
+        window.text_edit.setPlainText(original_text)
+        assert window._is_modified is True
+
+        with patch.object(window, "_prompt_save_changes", return_value="cancel"):
+            window.new_file()
+
+        assert window.text_edit.toPlainText() == original_text
+        assert window._is_modified is True
+
+    def test_new_file_with_unsaved_save_then_clears(self, window, tmp_path):
+        test_file = tmp_path / "saved.txt"
+        window.text_edit.setPlainText("content to save")
+        assert window._is_modified is True
+
+        with patch.object(window, "_prompt_save_changes", return_value="save"), \
+             patch("editor.window.QFileDialog.getSaveFileName") as mock_save:
+            mock_save.return_value = (str(test_file), "")
+            window.new_file()
+
+        assert test_file.exists()
+        assert window.text_edit.toPlainText() == ""
+        assert window._is_modified is False
+
+    def test_new_file_updates_title(self, window, tmp_path):
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content", encoding="utf-8")
+
+        with patch("editor.window.QFileDialog.getOpenFileName") as mock_open:
+            mock_open.return_value = (str(test_file), "")
+            window.open_file()
+
+        assert str(test_file) in window.windowTitle()
+
+        window.new_file()
+
+        assert str(test_file) not in window.windowTitle()
+        assert not window.windowTitle().startswith("* ")

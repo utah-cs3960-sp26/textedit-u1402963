@@ -30,8 +30,6 @@ The file IO was fairly simple to test, as most if not all of these tests manipul
 
 The highlighter testing first goes through the main case where the file has a filetype and that determines which highlighter will be used for it. The tests that examine the pattern matching follow, where a simple Python file for example is fed into the language detector and we verify that the correct language is matched based on this. There are also tests that validate that the detected syntax is actually highlighted.
 
-## What's Next (R2) 
-Currently, tab scaling is not optimized, and syntax highlighting has issues with multiline comments and block comments. In R2, I plan to implement find and replace, automatic indentation and bracket and quote matching, a file tree explorer with collapsible folders, as well as potentially going further to add more of the extra features and refining the current UI.
 
 ## AI Generated content below
 
@@ -49,3 +47,9 @@ tests/
 ├── test_editor_io.py    # File I/O tests
 └── test_highlighter.py  # Syntax highlighting tests
 ```
+
+# R2 - 
+
+## Monday notes -
+Added new file button, simple, quick
+Worked on undo/redo functionality. Undo would delete everything, and redo would bring it all back, not very useful. I asked AMP to research how undo/redo works in traditional text editors and to formulate an update accordingly. First I made it write tests that validate the expected behavior, and then write the patch for undo/redo. I noticed that in its implementation it did not do any form of "garbage collection" if you will for the events that undo/redo use. I know this will be an issue in the future so I prompted it to only keep 100 recent revisions to be eligible for undo/redo.

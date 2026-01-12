@@ -75,6 +75,11 @@ class MainWindow(QMainWindow):
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("&File")
 
+        new_action = QAction("&New", self)
+        new_action.setShortcut("Ctrl+N")
+        new_action.triggered.connect(self.new_file)
+        file_menu.addAction(new_action)
+
         open_action = QAction("&Open", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_file)
@@ -91,6 +96,42 @@ class MainWindow(QMainWindow):
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        edit_menu = menu_bar.addMenu("&Edit")
+
+        undo_action = QAction("&Undo", self)
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self.text_edit.undo)
+        edit_menu.addAction(undo_action)
+
+        redo_action = QAction("&Redo", self)
+        redo_action.setShortcut("Ctrl+Y")
+        redo_action.triggered.connect(self.text_edit.redo)
+        edit_menu.addAction(redo_action)
+
+        edit_menu.addSeparator()
+
+        cut_action = QAction("Cu&t", self)
+        cut_action.setShortcut("Ctrl+X")
+        cut_action.triggered.connect(self.text_edit.cut)
+        edit_menu.addAction(cut_action)
+
+        copy_action = QAction("&Copy", self)
+        copy_action.setShortcut("Ctrl+C")
+        copy_action.triggered.connect(self.text_edit.copy)
+        edit_menu.addAction(copy_action)
+
+        paste_action = QAction("&Paste", self)
+        paste_action.setShortcut("Ctrl+V")
+        paste_action.triggered.connect(self.text_edit.paste)
+        edit_menu.addAction(paste_action)
+
+        edit_menu.addSeparator()
+
+        select_all_action = QAction("Select &All", self)
+        select_all_action.setShortcut("Ctrl+A")
+        select_all_action.triggered.connect(self.text_edit.selectAll)
+        edit_menu.addAction(select_all_action)
 
     def _setup_status_label(self):
         toolbar = QToolBar()
@@ -163,6 +204,21 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         event.accept()
+
+    def new_file(self):
+        if self._document.is_modified:
+            result = self._prompt_save_changes()
+            if result == "save":
+                self.save_file()
+                if self._document.is_modified:
+                    return
+            elif result == "cancel":
+                return
+
+        self.text_edit.clear()
+        self._document.reset()
+        self._setup_highlighter()
+        self._update_status()
 
     def open_file(self):
         if self._document.is_modified:
