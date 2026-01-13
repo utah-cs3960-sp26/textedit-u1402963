@@ -12,9 +12,12 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QTextEdit,
     QPushButton,
+    QSplitter,
 )
 from PyQt6.QtGui import QAction, QCloseEvent
 from PyQt6.QtCore import Qt
+
+from editor.sidebar import SidebarWidget
 
 from editor.highlighters.detector import LanguageDetector
 from editor.code_editor import CodeEditor
@@ -38,6 +41,8 @@ class MainWindow(QMainWindow):
         self._setup_status_label()
 
         self.text_edit.textChanged.connect(self._mark_modified)
+        self.sidebar.file_opened.connect(self._on_file_opened_from_tree)
+        self.sidebar.open_folder_requested.connect(self.open_folder)
 
     @property
     def current_file(self):
@@ -67,8 +72,13 @@ class MainWindow(QMainWindow):
         self._document._original_content = value
 
     def _setup_central_widget(self):
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.sidebar = SidebarWidget()
+        splitter.addWidget(self.sidebar)
         self.text_edit = CodeEditor()
-        self.setCentralWidget(self.text_edit)
+        splitter.addWidget(self.text_edit)
+        splitter.setSizes([250, 550])
+        self.setCentralWidget(splitter)
 
     def _setup_highlighter(self, file_path: str = "", content: str = ""):
         if self.highlighter:
@@ -90,6 +100,11 @@ class MainWindow(QMainWindow):
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
+
+        open_folder_action = QAction("Open &Folder", self)
+        open_folder_action.setShortcut("Ctrl+Shift+O")
+        open_folder_action.triggered.connect(self.open_folder)
+        file_menu.addAction(open_folder_action)
 
         save_action = QAction("&Save", self)
         save_action.setShortcut("Ctrl+S")
@@ -143,6 +158,13 @@ class MainWindow(QMainWindow):
         select_all_action.setShortcut("Ctrl+A")
         select_all_action.triggered.connect(self.text_edit.selectAll)
         edit_menu.addAction(select_all_action)
+
+        view_menu = menu_bar.addMenu("&View")
+
+        toggle_sidebar_action = QAction("Toggle &Sidebar", self)
+        toggle_sidebar_action.setShortcut("Ctrl+B")
+        toggle_sidebar_action.triggered.connect(self.sidebar.toggle_visibility)
+        view_menu.addAction(toggle_sidebar_action)
 
         help_menu = menu_bar.addMenu("&Help")
 
@@ -265,6 +287,32 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.critical(self, "Error", error_msg)
 
+    def open_folder(self):
+        """Open folder dialog and set sidebar root."""
+        folder = QFileDialog.getExistingDirectory(self, "Open Folder")
+        if folder:
+            self.sidebar.set_root_folder(folder)
+
+    def _on_file_opened_from_tree(self, file_path: str):
+        """Handle file opened from sidebar tree."""
+        if self._document.is_modified:
+            result = self._prompt_save_changes()
+            if result == "save":
+                self.save_file()
+                if self._document.is_modified:
+                    return
+            elif result == "cancel":
+                return
+
+        success, content, error_msg = self._controller.open_file(file_path)
+        if success:
+            self.text_edit.setPlainText(content)
+            self._update_status()
+            self._setup_highlighter(file_path, content)
+            self.sidebar.highlight_file(file_path)
+        else:
+            QMessageBox.critical(self, "Error", error_msg)
+
     def save_file(self):
         content = self.text_edit.toPlainText()
 
@@ -319,6 +367,7 @@ class MainWindow(QMainWindow):
         <table>
             <tr><td><b>Ctrl+N</b></td><td>New file</td></tr>
             <tr><td><b>Ctrl+O</b></td><td>Open file</td></tr>
+            <tr><td><b>Ctrl+Shift+O</b></td><td>Open folder</td></tr>
             <tr><td><b>Ctrl+S</b></td><td>Save file</td></tr>
             <tr><td><b>Ctrl+Shift+S</b></td><td>Save file as</td></tr>
             <tr><td><b>Ctrl+Q</b></td><td>Exit</td></tr>
@@ -331,6 +380,10 @@ class MainWindow(QMainWindow):
             <tr><td><b>Ctrl+C</b></td><td>Copy</td></tr>
             <tr><td><b>Ctrl+V</b></td><td>Paste</td></tr>
             <tr><td><b>Ctrl+A</b></td><td>Select All</td></tr>
+        </table>
+        <h3>View</h3>
+        <table>
+            <tr><td><b>Ctrl+B</b></td><td>Toggle sidebar</td></tr>
         </table>
         <h3>Help</h3>
         <table>
