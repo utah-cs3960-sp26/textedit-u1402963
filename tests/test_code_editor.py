@@ -80,6 +80,42 @@ class TestLineNumberArea:
     def test_line_number_area_parent_is_editor(self, editor):
         assert editor.line_number_area.parent() is editor
 
+    def test_line_number_paint_no_crash_on_last_block(self, editor):
+        """Painting line numbers should not crash when reaching the last block."""
+        from PyQt6.QtGui import QPaintEvent
+        from PyQt6.QtCore import QRect
+
+        editor.setPlainText("line1\nline2\nline3")
+        editor.show()
+
+        rect = QRect(0, 0, editor.line_number_area.width(), editor.height())
+        event = QPaintEvent(rect)
+        editor.line_number_area_paint_event(event)
+
+    def test_line_number_paint_handles_empty_document(self, editor):
+        """Painting line numbers should handle empty document without crash."""
+        from PyQt6.QtGui import QPaintEvent
+        from PyQt6.QtCore import QRect
+
+        editor.setPlainText("")
+        editor.show()
+
+        rect = QRect(0, 0, editor.line_number_area.width(), editor.height())
+        event = QPaintEvent(rect)
+        editor.line_number_area_paint_event(event)
+
+    def test_line_number_paint_single_line(self, editor):
+        """Painting line numbers should work correctly for single line."""
+        from PyQt6.QtGui import QPaintEvent
+        from PyQt6.QtCore import QRect
+
+        editor.setPlainText("single line")
+        editor.show()
+
+        rect = QRect(0, 0, editor.line_number_area.width(), editor.height())
+        event = QPaintEvent(rect)
+        editor.line_number_area_paint_event(event)
+
 
 class TestKeyboardShortcuts:
     """Tests for keyboard shortcuts (Ctrl+Z, Ctrl+Y, etc.)."""

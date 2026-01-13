@@ -456,3 +456,126 @@ class TestGetSaveFilter:
     def test_returns_text_filter_for_unknown_content(self):
         result = LanguageDetector.get_save_filter("file.xyz", "random content")
         assert result == "Text (*.txt)"
+
+
+class TestMultilineBlockComments:
+    """Tests for multi-line block comment highlighting in C/C++/Java."""
+
+    def test_c_highlighter_has_multiline_comment_state(self, app):
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        assert hasattr(highlighter, 'IN_BLOCK_COMMENT')
+        assert highlighter.IN_BLOCK_COMMENT == 1
+
+    def test_cpp_highlighter_has_multiline_comment_state(self, app):
+        doc = QTextDocument()
+        highlighter = CppHighlighter(doc)
+        assert hasattr(highlighter, 'IN_BLOCK_COMMENT')
+        assert highlighter.IN_BLOCK_COMMENT == 1
+
+    def test_java_highlighter_has_multiline_comment_state(self, app):
+        doc = QTextDocument()
+        highlighter = JavaHighlighter(doc)
+        assert hasattr(highlighter, 'IN_BLOCK_COMMENT')
+        assert highlighter.IN_BLOCK_COMMENT == 1
+
+    def test_c_multiline_comment_unclosed_sets_state(self, app):
+        """Unclosed block comment should set IN_BLOCK_COMMENT state."""
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        doc.setPlainText("/* this is unclosed")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == highlighter.IN_BLOCK_COMMENT
+
+    def test_cpp_multiline_comment_unclosed_sets_state(self, app):
+        """Unclosed block comment should set IN_BLOCK_COMMENT state."""
+        doc = QTextDocument()
+        highlighter = CppHighlighter(doc)
+        doc.setPlainText("/* this is unclosed")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == highlighter.IN_BLOCK_COMMENT
+
+    def test_java_multiline_comment_unclosed_sets_state(self, app):
+        """Unclosed block comment should set IN_BLOCK_COMMENT state."""
+        doc = QTextDocument()
+        highlighter = JavaHighlighter(doc)
+        doc.setPlainText("/* this is unclosed")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == highlighter.IN_BLOCK_COMMENT
+
+    def test_c_code_after_closed_comment_not_highlighted_as_comment(self, app):
+        """Code after closed block comment should not be in comment state."""
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        doc.setPlainText("/* comment */\nint x = 5;")
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() != highlighter.IN_BLOCK_COMMENT
+
+    def test_c_single_line_block_comment_no_state(self, app):
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        doc.setPlainText("/* single line */")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == 0
+
+
+class TestPythonTripleQuotedStrings:
+    """Tests for Python triple-quoted string highlighting."""
+
+    def test_python_highlighter_has_triple_quote_states(self, app):
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        assert hasattr(highlighter, 'IN_TRIPLE_DOUBLE')
+        assert hasattr(highlighter, 'IN_TRIPLE_SINGLE')
+        assert highlighter.IN_TRIPLE_DOUBLE == 1
+        assert highlighter.IN_TRIPLE_SINGLE == 2
+
+    def test_python_triple_double_quote_unclosed_sets_state(self, app):
+        """Unclosed triple double quote should set IN_TRIPLE_DOUBLE state."""
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        doc.setPlainText('"""This is unclosed')
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == highlighter.IN_TRIPLE_DOUBLE
+
+    def test_python_triple_single_quote_unclosed_sets_state(self, app):
+        """Unclosed triple single quote should set IN_TRIPLE_SINGLE state."""
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        doc.setPlainText("'''This is unclosed")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == highlighter.IN_TRIPLE_SINGLE
+
+    def test_python_code_after_closed_triple_quote_not_in_string_state(self, app):
+        """Code after closed triple quote should not be in string state."""
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        doc.setPlainText('"""docstring"""\ndef foo():')
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() != highlighter.IN_TRIPLE_DOUBLE
+        assert second_block.userState() != highlighter.IN_TRIPLE_SINGLE
+
+    def test_python_single_line_triple_quote_no_state(self, app):
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        doc.setPlainText('"""single line docstring"""')
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == 0

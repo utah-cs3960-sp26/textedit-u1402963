@@ -1,7 +1,7 @@
 [project]
-name = "textedit"
-version = "0.1.0"
-description = "A native, cross-platform text editor using PyQt6"
+name = "fart"
+version = "0.2.0"
+description = "FART (Fast Async Runtime Text-editor) - A native, cross-platform text editor using PyQt6"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

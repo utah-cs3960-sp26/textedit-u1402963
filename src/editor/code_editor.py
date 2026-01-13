@@ -112,6 +112,8 @@ class CodeEditor(QPlainTextEdit):
                     number,
                 )
             block = block.next()
+            if not block.isValid():
+                break
             top = bottom
             bottom = top + int(self.blockBoundingRect(block).height())
             block_number += 1
