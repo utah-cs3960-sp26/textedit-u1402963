@@ -1,6 +1,11 @@
 from PyQt6.QtGui import QUndoCommand, QTextCursor
 
 
+def _utf16_len(text: str) -> int:
+    """Return the UTF-16 code unit length of a string (for Qt cursor positions)."""
+    return len(text.encode('utf-16-le')) // 2
+
+
 class TextEditCommand(QUndoCommand):
     """
     Base command for text edit operations that can be undone/redone.
@@ -42,7 +47,7 @@ class InsertTextCommand(TextEditCommand):
     def undo(self):
         cursor = self._editor.textCursor()
         cursor.setPosition(self._position)
-        cursor.setPosition(self._position + len(self._text), QTextCursor.MoveMode.KeepAnchor)
+        cursor.setPosition(self._position + _utf16_len(self._text), QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
         self._editor.setTextCursor(cursor)
 
@@ -62,7 +67,7 @@ class DeleteTextCommand(TextEditCommand):
             return
         cursor = self._editor.textCursor()
         cursor.setPosition(self._start)
-        cursor.setPosition(self._start + len(self._deleted_text), QTextCursor.MoveMode.KeepAnchor)
+        cursor.setPosition(self._start + _utf16_len(self._deleted_text), QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
         self._editor.setTextCursor(cursor)
 
@@ -88,13 +93,13 @@ class ReplaceTextCommand(TextEditCommand):
             return
         cursor = self._editor.textCursor()
         cursor.setPosition(self._start)
-        cursor.setPosition(self._start + len(self._old_text), QTextCursor.MoveMode.KeepAnchor)
+        cursor.setPosition(self._start + _utf16_len(self._old_text), QTextCursor.MoveMode.KeepAnchor)
         cursor.insertText(self._new_text)
         self._editor.setTextCursor(cursor)
 
     def undo(self):
         cursor = self._editor.textCursor()
         cursor.setPosition(self._start)
-        cursor.setPosition(self._start + len(self._new_text), QTextCursor.MoveMode.KeepAnchor)
+        cursor.setPosition(self._start + _utf16_len(self._new_text), QTextCursor.MoveMode.KeepAnchor)
         cursor.insertText(self._old_text)
         self._editor.setTextCursor(cursor)

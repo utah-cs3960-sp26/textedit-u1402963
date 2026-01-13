@@ -56,7 +56,7 @@ Use `QPlainTextEdit` (not `QTextEdit`) for the editor — better performance for
 - Limited to 100 revisions to prevent memory bloat
 - Ensure undo/redo stack are cleared when switching files
 
-## Current Release: R2 (Demo: Jan 21)
+## Current Release: R2
 
 ### R2 Must-Fix Bugs
 - Line number gutter bug (`code_editor.py` line 114 - add `block.isValid()` check)
