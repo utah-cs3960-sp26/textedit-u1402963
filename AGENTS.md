@@ -58,13 +58,7 @@ Use `QPlainTextEdit` (not `QTextEdit`) for the editor — better performance for
 
 ## Current Release: R2
 
-### R2 Must-Fix Bugs
-- Line number gutter bug (`code_editor.py` line 114 - add `block.isValid()` check)
-- Multi-line block comments (C/C++/Java) - need state tracking in `highlightBlock()`
-- Python triple-quoted strings - need state tracking
-
 ### R2 Features
-- Help menu with shortcut references
 - Fix shift+enter un-numbered newline bug
 - "Save as" dialogue
 - File tree explorer with collapsible folders

@@ -6,6 +6,10 @@ from PyQt6.QtWidgets import (
     QWidget,
     QToolBar,
     QSizePolicy,
+    QDialog,
+    QVBoxLayout,
+    QTextEdit,
+    QPushButton,
 )
 from PyQt6.QtGui import QAction, QCloseEvent
 from PyQt6.QtCore import Qt
@@ -132,6 +136,13 @@ class MainWindow(QMainWindow):
         select_all_action.setShortcut("Ctrl+A")
         select_all_action.triggered.connect(self.text_edit.selectAll)
         edit_menu.addAction(select_all_action)
+
+        help_menu = menu_bar.addMenu("&Help")
+
+        shortcuts_action = QAction("&Keyboard Shortcuts", self)
+        shortcuts_action.setShortcut("F1")
+        shortcuts_action.triggered.connect(self._show_shortcuts_dialog)
+        help_menu.addAction(shortcuts_action)
 
     def _setup_status_label(self):
         toolbar = QToolBar()
@@ -272,3 +283,42 @@ class MainWindow(QMainWindow):
             self._setup_highlighter(self._document.file_path)
         else:
             QMessageBox.critical(self, "Error", error_msg)
+
+    def _show_shortcuts_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Keyboard Shortcuts")
+        dialog.resize(400, 300)
+
+        layout = QVBoxLayout(dialog)
+
+        shortcuts_text = QTextEdit()
+        shortcuts_text.setReadOnly(True)
+        shortcuts_text.setHtml("""
+        <h3>File</h3>
+        <table>
+            <tr><td><b>Ctrl+N</b></td><td>New file</td></tr>
+            <tr><td><b>Ctrl+O</b></td><td>Open file</td></tr>
+            <tr><td><b>Ctrl+S</b></td><td>Save file</td></tr>
+            <tr><td><b>Ctrl+Q</b></td><td>Exit</td></tr>
+        </table>
+        <h3>Edit</h3>
+        <table>
+            <tr><td><b>Ctrl+Z</b></td><td>Undo</td></tr>
+            <tr><td><b>Ctrl+Y</b></td><td>Redo</td></tr>
+            <tr><td><b>Ctrl+X</b></td><td>Cut</td></tr>
+            <tr><td><b>Ctrl+C</b></td><td>Copy</td></tr>
+            <tr><td><b>Ctrl+V</b></td><td>Paste</td></tr>
+            <tr><td><b>Ctrl+A</b></td><td>Select All</td></tr>
+        </table>
+        <h3>Help</h3>
+        <table>
+            <tr><td><b>F1</b></td><td>Show this dialog</td></tr>
+        </table>
+        """)
+        layout.addWidget(shortcuts_text)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
+
+        dialog.exec()
