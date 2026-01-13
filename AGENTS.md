@@ -59,8 +59,7 @@ Use `QPlainTextEdit` (not `QTextEdit`) for the editor — better performance for
 ## Current Release: R2
 
 ### R2 Features
-- Fix shift+enter un-numbered newline bug
-- "Save as" dialogue
+- "Save as" Feature
 - File tree explorer with collapsible folders
 - Multi-file tab support
 - Tab management (close, switch, drag-to-reorder)

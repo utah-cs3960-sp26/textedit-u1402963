@@ -191,19 +191,27 @@ class CodeEditor(QPlainTextEdit):
 
         if key in self.WHITESPACE_KEYS:
             self._flush_pending_insert()
+            is_newline = key in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
             
             if cursor.hasSelection():
                 start = cursor.selectionStart()
                 end = cursor.selectionEnd()
                 old_text = cursor.selectedText()
-                new_text = "\n" if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) else event.text()
-                super().keyPressEvent(event)
+                new_text = "\n" if is_newline else event.text()
+                if is_newline:
+                    cursor.removeSelectedText()
+                    cursor.insertBlock()
+                else:
+                    super().keyPressEvent(event)
                 cmd = ReplaceTextCommand(self, start, end, old_text, new_text)
                 self._undo_stack.push(cmd)
             else:
                 pos = cursor.position()
-                new_text = "\n" if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) else event.text()
-                super().keyPressEvent(event)
+                new_text = "\n" if is_newline else event.text()
+                if is_newline:
+                    cursor.insertBlock()
+                else:
+                    super().keyPressEvent(event)
                 cmd = InsertTextCommand(self, new_text, pos)
                 self._undo_stack.push(cmd)
             return

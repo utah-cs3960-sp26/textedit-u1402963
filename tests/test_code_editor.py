@@ -19,6 +19,68 @@ def editor(app):
     return CodeEditor()
 
 
+class TestShiftEnterBehavior:
+    """Tests for Shift+Enter creating proper new blocks with line numbers."""
+
+    def _press_enter(self, editor, with_shift=False):
+        """Helper to simulate Enter or Shift+Enter."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        
+        modifiers = Qt.KeyboardModifier.ShiftModifier if with_shift else Qt.KeyboardModifier.NoModifier
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, modifiers, "\r")
+        editor.keyPressEvent(event)
+
+    def test_shift_enter_creates_new_block(self, editor):
+        """Shift+Enter should create a new block, just like regular Enter."""
+        editor.setPlainText("line1")
+        cursor = editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+        
+        initial_block_count = editor.blockCount()
+        assert initial_block_count == 1
+        
+        self._press_enter(editor, with_shift=True)
+        
+        assert editor.blockCount() == 2, "Shift+Enter should create a new block"
+
+    def test_shift_enter_line_numbers_match_block_count(self, editor):
+        """After Shift+Enter, block count should match expected line numbers."""
+        editor.setPlainText("")
+        
+        self._press_enter(editor, with_shift=True)
+        assert editor.blockCount() == 2
+        
+        self._press_enter(editor, with_shift=True)
+        assert editor.blockCount() == 3
+        
+        self._press_enter(editor, with_shift=False)
+        assert editor.blockCount() == 4
+
+    def test_regular_enter_still_works(self, editor):
+        """Regular Enter should continue to create new blocks."""
+        editor.setPlainText("test")
+        cursor = editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+        
+        self._press_enter(editor, with_shift=False)
+        
+        assert editor.blockCount() == 2
+
+    def test_mixed_enter_and_shift_enter(self, editor):
+        """Mixing Enter and Shift+Enter should create correct block counts."""
+        editor.setPlainText("")
+        
+        self._press_enter(editor, with_shift=False)
+        self._press_enter(editor, with_shift=True)
+        self._press_enter(editor, with_shift=False)
+        self._press_enter(editor, with_shift=True)
+        
+        assert editor.blockCount() == 5
+
+
 class TestCodeEditorLineNumbers:
     def test_line_number_area_exists(self, editor):
         assert editor.line_number_area is not None
