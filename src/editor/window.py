@@ -1,3 +1,5 @@
+import os
+
 from PyQt6.QtWidgets import (
     QMainWindow,
     QFileDialog,
@@ -93,6 +95,11 @@ class MainWindow(QMainWindow):
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self.save_file)
         file_menu.addAction(save_action)
+
+        save_as_action = QAction("Save &As...", self)
+        save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self.save_file_as)
+        file_menu.addAction(save_as_action)
 
         file_menu.addSeparator()
 
@@ -263,19 +270,33 @@ class MainWindow(QMainWindow):
 
         if self._document.file_path:
             file_path = self._document.file_path
+            success, error_msg = self._controller.save_file(file_path, content)
+            if success:
+                self._update_status()
+                self._setup_highlighter(self._document.file_path)
+            else:
+                QMessageBox.critical(self, "Error", error_msg)
         else:
-            suggested_filter = self._controller.get_save_filter(content)
-            all_filters = "All Files (*);;Python (*.py);;C Source (*.c);;C++ Source (*.cpp);;C Header (*.h);;C++ Header (*.hpp);;Java (*.java);;HTML (*.html);;HTM (*.htm);;JSON (*.json);;Markdown (*.md);;Text (*.txt)"
+            self.save_file_as()
 
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "Save File",
-                "",
-                all_filters,
-                suggested_filter,
-            )
-            if not file_path:
-                return
+    def save_file_as(self):
+        content = self.text_edit.toPlainText()
+        suggested_filter = self._controller.get_save_filter(content)
+        all_filters = "All Files (*);;Python (*.py);;C Source (*.c);;C++ Source (*.cpp);;C Header (*.h);;C++ Header (*.hpp);;Java (*.java);;HTML (*.html);;HTM (*.htm);;JSON (*.json);;Markdown (*.md);;Text (*.txt)"
+
+        start_dir = ""
+        if self._document.file_path:
+            start_dir = os.path.dirname(self._document.file_path)
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save File As",
+            start_dir,
+            all_filters,
+            suggested_filter,
+        )
+        if not file_path:
+            return
 
         success, error_msg = self._controller.save_file(file_path, content)
         if success:
@@ -299,6 +320,7 @@ class MainWindow(QMainWindow):
             <tr><td><b>Ctrl+N</b></td><td>New file</td></tr>
             <tr><td><b>Ctrl+O</b></td><td>Open file</td></tr>
             <tr><td><b>Ctrl+S</b></td><td>Save file</td></tr>
+            <tr><td><b>Ctrl+Shift+S</b></td><td>Save file as</td></tr>
             <tr><td><b>Ctrl+Q</b></td><td>Exit</td></tr>
         </table>
         <h3>Edit</h3>
