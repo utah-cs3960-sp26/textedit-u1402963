@@ -50,6 +50,19 @@ tests/
 
 # R2 - 
 
-## Monday notes -
-Added new file button, simple, quick
-Worked on undo/redo functionality. Undo would delete everything, and redo would bring it all back, not very useful. I asked AMP to research how undo/redo works in traditional text editors and to formulate an update accordingly. First I made it write tests that validate the expected behavior, and then write the patch for undo/redo. I noticed that in its implementation it did not do any form of "garbage collection" if you will for the events that undo/redo use. I know this will be an issue in the future so I prompted it to only keep 100 recent revisions to be eligible for undo/redo.
+## General Overview -
+Added new file button, simple, quick.
+Worked on undo/redo functionality. Undo would delete everything, and redo would bring it all back, not very useful. I asked AMP to research how undo/redo works in traditional text editors and to formulate an update accordingly. First I made it write tests that validate the expected behavior, and then write the patch for undo/redo. I noticed that in its implementation it did not do any form of "garbage collection" for the events that undo/redo use. I know this will be an issue in the future so I prompted it to only keep 100 recent revisions to be eligible for undo/redo.
+
+# Undo/Redo
+This feature works completely, after the lecture where we talked about testing I tried some of the edge cases and found that none of them really impacted my undo/redo at least. The technique I used for making my life easier on this one was telling AMP to ask clarifying questions before implementing and this had absolutely awesome results. I found that there is so much left up to the LLM to decide implicitly, and this strategy reveals that the the developer and gives them back control. I essentially kept telling AMP what was not working, made it write a test before fixing anything, and then verifying the fix by the now passing test(s). I asked AMP to write tests for this one, to be honest I'm not sure what exactly it is they do, but every time I made it fix something that was wrong with undo/redo I would make it write a test for the issue, confirm it failed, and then make a fix for the problem, and then the test would pass, so I'm faorly sure the tests are actually doing something at least. Another thing I fought with briefly is that operations like cut and paste did not behave as expected, but with my approach of writing a test, and then fixing the code AMP had absolutely no issues giving me what I wanted.
+
+# File tree explorer
+This feature works well, after I did the first implementation there were some funny little issues, but after a couple prompts I got them ironed out. I decided to make the app not show a default folder, like VS Code and make the user select one, but this was also a way to bypass some weird behavior of navigating the filesystem through the file tree widget where it wouldn't show any files. With the current implementation I think everything makes sense and works as expected. For this I also made AMP generate tests, consider edge cases, etc and made it write tests before fixing issues, but most of my testing was by using the editor and seeing when it misbehaved since I didn't want to add a bunch of gui tests, If I get a chance though I will add some of those next week. For now the button to hide the sidebar with the file explorer is under a button called view in the top row, but that is not my favorite, and I will relocate it to a dedicated button within the sidebar so its more intuitive, this was one of those small things that I didn't describe clearly enough, so AMP just did whatever it wanted. Issues like this were mitigated extremely well by asking AMP to ask you lots of clarifying questions since it made the implicitly decided behavior much more direct.
+
+Initial launch screen:
+![alt text](<assets/No folder open.png>)
+
+When a folder is selected:
+![alt text](<assets/open folder.png>)
+
