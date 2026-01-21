@@ -23,6 +23,7 @@ class CodeEditor(QPlainTextEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.line_number_area = LineNumberArea(self)
 
         self._undo_stack = QUndoStack(self)
