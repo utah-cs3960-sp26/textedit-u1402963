@@ -1,0 +1,186 @@
+from editor.highlighters.core.types import (
+    Token, StateStack, TokenizeResult, StyleId, StackFrame
+)
+from editor.highlighters.tokenizers.base_tokenizer import BaseTokenizer
+
+STATE_DEFAULT = 0
+STATE_BLOCK_COMMENT = 1
+
+KEYWORDS: set[str] = {
+    "auto", "break", "case", "char", "const", "continue", "default", "do",
+    "double", "else", "enum", "extern", "float", "for", "goto", "if",
+    "int", "long", "register", "return", "short", "signed", "sizeof",
+    "static", "struct", "switch", "typedef", "union", "unsigned", "void",
+    "volatile", "while"
+}
+
+OPERATORS: set[str] = {
+    "+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=",
+    "&&", "||", "!", "&", "|", "^", "~", "<<", ">>",
+    "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
+    "++", "--", "->", ".", "?", ":"
+}
+
+PUNCTUATION: set[str] = {"(", ")", "[", "]", "{", "}", ",", ";"}
+
+
+class CTokenizer(BaseTokenizer):
+    def get_lang_id(self) -> str:
+        return "c"
+
+    def _get_keywords(self) -> set[str]:
+        return KEYWORDS
+
+    def tokenize_line(self, line: str, state_stack: StateStack) -> TokenizeResult:
+        tokens: list[Token] = []
+        i = 0
+        n = len(line)
+
+        current_sub_state = STATE_DEFAULT
+        if state_stack:
+            top_frame = state_stack[-1]
+            if top_frame.lang_id == self.get_lang_id():
+                current_sub_state = top_frame.sub_state
+
+        if current_sub_state == STATE_BLOCK_COMMENT:
+            start = 0
+            while i < n:
+                if line[i:i+2] == "*/":
+                    i += 2
+                    tokens.append(Token(start=start, length=i - start, style_id=StyleId.COMMENT))
+                    state_stack = state_stack[:-1]
+                    current_sub_state = STATE_DEFAULT
+                    break
+                i += 1
+            else:
+                tokens.append(Token(start=start, length=n - start, style_id=StyleId.COMMENT))
+                return TokenizeResult(tokens=tokens, final_stack=state_stack)
+
+        keywords = self._get_keywords()
+
+        while i < n:
+            ch = line[i]
+
+            if ch in ' \t\r\n':
+                i += 1
+                continue
+
+            if ch == '/' and i + 1 < n and line[i + 1] == '/':
+                tokens.append(Token(start=i, length=n - i, style_id=StyleId.COMMENT))
+                break
+
+            if ch == '/' and i + 1 < n and line[i + 1] == '*':
+                start = i
+                i += 2
+                while i < n:
+                    if line[i:i+2] == "*/":
+                        i += 2
+                        tokens.append(Token(start=start, length=i - start, style_id=StyleId.COMMENT))
+                        break
+                    i += 1
+                else:
+                    tokens.append(Token(start=start, length=n - start, style_id=StyleId.COMMENT))
+                    new_frame = StackFrame(lang_id=self.get_lang_id(), sub_state=STATE_BLOCK_COMMENT, end_condition=None)
+                    state_stack = state_stack + (new_frame,)
+                continue
+
+            if ch == '#':
+                start = i
+                i += 1
+                while i < n and line[i] in ' \t':
+                    i += 1
+                while i < n and (line[i].isalnum() or line[i] == '_'):
+                    i += 1
+                tokens.append(Token(start=start, length=i - start, style_id=StyleId.KEYWORD))
+                continue
+
+            if ch == '"':
+                start = i
+                i += 1
+                while i < n:
+                    if line[i] == '\\' and i + 1 < n:
+                        i += 2
+                    elif line[i] == '"':
+                        i += 1
+                        break
+                    else:
+                        i += 1
+                tokens.append(Token(start=start, length=i - start, style_id=StyleId.STRING))
+                continue
+
+            if ch == "'":
+                start = i
+                i += 1
+                while i < n:
+                    if line[i] == '\\' and i + 1 < n:
+                        i += 2
+                    elif line[i] == "'":
+                        i += 1
+                        break
+                    else:
+                        i += 1
+                tokens.append(Token(start=start, length=i - start, style_id=StyleId.STRING))
+                continue
+
+            if ch.isdigit() or (ch == '.' and i + 1 < n and line[i + 1].isdigit()):
+                start = i
+                if line[i:i+2] in ('0x', '0X'):
+                    i += 2
+                    while i < n and (line[i].isdigit() or line[i] in 'abcdefABCDEF'):
+                        i += 1
+                elif ch == '0' and i + 1 < n and line[i + 1].isdigit():
+                    i += 1
+                    while i < n and line[i] in '01234567':
+                        i += 1
+                else:
+                    while i < n and line[i].isdigit():
+                        i += 1
+                    if i < n and line[i] == '.':
+                        i += 1
+                        while i < n and line[i].isdigit():
+                            i += 1
+                    if i < n and line[i] in 'eE':
+                        i += 1
+                        if i < n and line[i] in '+-':
+                            i += 1
+                        while i < n and line[i].isdigit():
+                            i += 1
+                if i < n and line[i] in 'fFlLuU':
+                    i += 1
+                    if i < n and line[i] in 'lLuU':
+                        i += 1
+                tokens.append(Token(start=start, length=i - start, style_id=StyleId.NUMBER))
+                continue
+
+            if ch.isalpha() or ch == '_':
+                start = i
+                while i < n and (line[i].isalnum() or line[i] == '_'):
+                    i += 1
+                word = line[start:i]
+                if word in keywords:
+                    tokens.append(Token(start=start, length=i - start, style_id=StyleId.KEYWORD))
+                else:
+                    tokens.append(Token(start=start, length=i - start, style_id=StyleId.IDENTIFIER))
+                continue
+
+            if i + 2 <= n and line[i:i+3] in OPERATORS:
+                tokens.append(Token(start=i, length=3, style_id=StyleId.OPERATOR))
+                i += 3
+                continue
+            if i + 1 < n and line[i:i+2] in OPERATORS:
+                tokens.append(Token(start=i, length=2, style_id=StyleId.OPERATOR))
+                i += 2
+                continue
+            if ch in OPERATORS:
+                tokens.append(Token(start=i, length=1, style_id=StyleId.OPERATOR))
+                i += 1
+                continue
+
+            if ch in PUNCTUATION:
+                tokens.append(Token(start=i, length=1, style_id=StyleId.PUNCTUATION))
+                i += 1
+                continue
+
+            i += 1
+
+        return TokenizeResult(tokens=tokens, final_stack=state_stack)

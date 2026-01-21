@@ -10,11 +10,12 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QDialog,
     QVBoxLayout,
+    QHBoxLayout,
     QTextEdit,
     QPushButton,
     QSplitter,
 )
-from PyQt6.QtGui import QAction, QCloseEvent
+from PyQt6.QtGui import QAction, QCloseEvent, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt
 
 from editor.sidebar import SidebarWidget
@@ -79,6 +80,14 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.text_edit)
         splitter.setSizes([250, 550])
         self.setCentralWidget(splitter)
+        
+        self._sidebar_shortcut = QShortcut(QKeySequence("Ctrl+B"), self)
+        self._sidebar_shortcut.activated.connect(self._toggle_sidebar)
+    
+    def _toggle_sidebar(self):
+        is_visible = self.sidebar.isVisible()
+        self.sidebar.setVisible(not is_visible)
+        self.toggle_sidebar_button.setChecked(not is_visible)
 
     def _setup_highlighter(self, file_path: str = "", content: str = ""):
         if self.highlighter:
@@ -159,13 +168,6 @@ class MainWindow(QMainWindow):
         select_all_action.triggered.connect(self.text_edit.selectAll)
         edit_menu.addAction(select_all_action)
 
-        view_menu = menu_bar.addMenu("&View")
-
-        toggle_sidebar_action = QAction("Toggle &Sidebar", self)
-        toggle_sidebar_action.setShortcut("Ctrl+B")
-        toggle_sidebar_action.triggered.connect(self.sidebar.toggle_visibility)
-        view_menu.addAction(toggle_sidebar_action)
-
         help_menu = menu_bar.addMenu("&Help")
 
         shortcuts_action = QAction("&Keyboard Shortcuts", self)
@@ -179,6 +181,14 @@ class MainWindow(QMainWindow):
         toolbar.setFloatable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
 
+        self.toggle_sidebar_button = QPushButton("📁")
+        self.toggle_sidebar_button.setCheckable(True)
+        self.toggle_sidebar_button.setChecked(True)
+        self.toggle_sidebar_button.setFixedSize(28, 28)
+        self.toggle_sidebar_button.setToolTip("Toggle File Explorer (Ctrl+B)")
+        self.toggle_sidebar_button.clicked.connect(self._toggle_sidebar)
+        toolbar.addWidget(self.toggle_sidebar_button)
+
         left_spacer = QWidget()
         left_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(left_spacer)
@@ -191,6 +201,10 @@ class MainWindow(QMainWindow):
         right_spacer = QWidget()
         right_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(right_spacer)
+
+        right_balance = QWidget()
+        right_balance.setFixedWidth(28)
+        toolbar.addWidget(right_balance)
 
     def _mark_modified(self):
         current_content = self.text_edit.toPlainText()
@@ -381,9 +395,9 @@ class MainWindow(QMainWindow):
             <tr><td><b>Ctrl+V</b></td><td>Paste</td></tr>
             <tr><td><b>Ctrl+A</b></td><td>Select All</td></tr>
         </table>
-        <h3>View</h3>
+        <h3>Navigation</h3>
         <table>
-            <tr><td><b>Ctrl+B</b></td><td>Toggle sidebar</td></tr>
+            <tr><td><b>Ctrl+B</b></td><td>Toggle file explorer</td></tr>
         </table>
         <h3>Help</h3>
         <table>

@@ -1,4 +1,5 @@
 import re
+import warnings
 
 from editor.highlighters.python_hl import PythonHighlighter
 from editor.highlighters.c_hl import CHighlighter
@@ -8,6 +9,32 @@ from editor.highlighters.html_hl import HtmlHighlighter
 from editor.highlighters.json_hl import JsonHighlighter
 from editor.highlighters.markdown_hl import MarkdownHighlighter
 from editor.highlighters.plain_hl import PlainTextHighlighter
+
+
+class _DeprecatedHighlighterMap(dict):
+    """Wrapper that emits deprecation warning when HIGHLIGHTER_MAP is accessed."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._warned = False
+
+    def _warn(self):
+        if not self._warned:
+            warnings.warn(
+                "HIGHLIGHTER_MAP is deprecated. Use DocumentHighlighter with "
+                "the new tokenizer architecture instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            self._warned = True
+
+    def __getitem__(self, key):
+        self._warn()
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        self._warn()
+        return super().get(key, default)
 
 
 class LanguageDetector:
@@ -53,7 +80,7 @@ class LanguageDetector:
         "plain": "Text (*.txt)",
     }
 
-    HIGHLIGHTER_MAP = {
+    HIGHLIGHTER_MAP = _DeprecatedHighlighterMap({
         "python": PythonHighlighter,
         "c": CHighlighter,
         "cpp": CppHighlighter,
@@ -62,7 +89,7 @@ class LanguageDetector:
         "json": JsonHighlighter,
         "markdown": MarkdownHighlighter,
         "plain": PlainTextHighlighter,
-    }
+    })
 
     @classmethod
     def detect_from_extension(cls, file_path: str) -> str:
@@ -121,9 +148,23 @@ class LanguageDetector:
 
     @classmethod
     def get_highlighter(cls, document, file_path: str = "", content: str = ""):
+        """Get a highlighter for the given document.
+
+        Uses the new DocumentHighlighter with tokenizer architecture.
+
+        Args:
+            document: The QTextDocument to highlight.
+            file_path: Optional file path for language detection.
+            content: Optional content for language detection.
+
+        Returns:
+            A DocumentHighlighter instance configured for the detected language.
+        """
+        from editor.highlighters.document_highlighter import DocumentHighlighter
+        import editor.highlighters.register_tokenizers  # noqa: F401
+
         lang = cls.detect(file_path, content)
-        highlighter_class = cls.HIGHLIGHTER_MAP.get(lang, PlainTextHighlighter)
-        return highlighter_class(document)
+        return DocumentHighlighter(document, lang)
 
     @classmethod
     def suggest_extension(cls, file_path: str, content: str) -> str:

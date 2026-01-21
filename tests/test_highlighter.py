@@ -78,31 +78,41 @@ class TestPythonHighlighterBehavior:
 
 class TestHighlighterIntegration:
     def test_language_detector_returns_correct_highlighter_type(self, app):
+        from editor.highlighters.document_highlighter import DocumentHighlighter
+
         doc = QTextDocument()
 
         python_hl = LanguageDetector.get_highlighter(doc, "test.py")
-        assert isinstance(python_hl, PythonHighlighter)
+        assert isinstance(python_hl, DocumentHighlighter)
+        assert python_hl._lang_id == "python"
 
         c_hl = LanguageDetector.get_highlighter(doc, "test.c")
-        assert isinstance(c_hl, CHighlighter)
+        assert isinstance(c_hl, DocumentHighlighter)
+        assert c_hl._lang_id == "c"
 
         cpp_hl = LanguageDetector.get_highlighter(doc, "test.cpp")
-        assert isinstance(cpp_hl, CppHighlighter)
+        assert isinstance(cpp_hl, DocumentHighlighter)
+        assert cpp_hl._lang_id == "cpp"
 
         java_hl = LanguageDetector.get_highlighter(doc, "Test.java")
-        assert isinstance(java_hl, JavaHighlighter)
+        assert isinstance(java_hl, DocumentHighlighter)
+        assert java_hl._lang_id == "java"
 
         html_hl = LanguageDetector.get_highlighter(doc, "index.html")
-        assert isinstance(html_hl, HtmlHighlighter)
+        assert isinstance(html_hl, DocumentHighlighter)
+        assert html_hl._lang_id == "html"
 
         json_hl = LanguageDetector.get_highlighter(doc, "config.json")
-        assert isinstance(json_hl, JsonHighlighter)
+        assert isinstance(json_hl, DocumentHighlighter)
+        assert json_hl._lang_id == "json"
 
         md_hl = LanguageDetector.get_highlighter(doc, "README.md")
-        assert isinstance(md_hl, MarkdownHighlighter)
+        assert isinstance(md_hl, DocumentHighlighter)
+        assert md_hl._lang_id == "markdown"
 
         txt_hl = LanguageDetector.get_highlighter(doc, "notes.txt")
-        assert isinstance(txt_hl, PlainTextHighlighter)
+        assert isinstance(txt_hl, DocumentHighlighter)
+        assert txt_hl._lang_id == "plain"
 
 
 class TestLanguageDetectorExtension:
