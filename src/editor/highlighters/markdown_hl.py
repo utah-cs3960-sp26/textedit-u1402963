@@ -9,7 +9,7 @@ class MarkdownHighlighter(BaseHighlighter):
         self.add_pattern(r"__[^_]+__", "white", bold=True)
         self.add_pattern(r"\*[^*]+\*", "white", italic=True)
         self.add_pattern(r"_[^_]+_", "white", italic=True)
-        self.add_pattern(r"`[^`]+`", "orange")
+        self.add_pattern(r"(?<!`)`(?!`)([^`]+)`(?!`)", "orange")
         self.add_pattern(r"^\s*[-*+]\s", "yellow", bold=True)
         self.add_pattern(r"^\s*\d+\.\s", "yellow", bold=True)
         self.add_pattern(r"\[([^\]]+)\]\([^)]+\)", "cyan")

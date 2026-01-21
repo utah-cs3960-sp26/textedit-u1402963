@@ -589,3 +589,51 @@ class TestPythonTripleQuotedStrings:
 
         first_block = doc.firstBlock()
         assert first_block.userState() == 0
+
+
+class TestMarkdownInlineCode:
+    """Tests for markdown inline code highlighting (single backticks only)."""
+
+    def test_inline_code_pattern_matches_single_backticks(self, app):
+        """Single backtick inline code like `code` should be matched."""
+        doc = QTextDocument()
+        highlighter = MarkdownHighlighter(doc)
+
+        has_inline_match = False
+        for pattern, fmt in highlighter._highlighting_rules:
+            matches = list(pattern.finditer("`code`"))
+            if matches and matches[0].group() == "`code`":
+                has_inline_match = True
+                break
+
+        assert has_inline_match, "Should match single backtick inline code"
+
+    def test_inline_code_pattern_does_not_match_inside_triple_backticks(self, app):
+        """Triple backticks ```code``` should NOT match `code` as inline code."""
+        doc = QTextDocument()
+        highlighter = MarkdownHighlighter(doc)
+
+        text = "```code```"
+        inline_matches = []
+        for pattern, fmt in highlighter._highlighting_rules:
+            for match in pattern.finditer(text):
+                if "`" in match.group():
+                    inline_matches.append(match.group())
+
+        assert len(inline_matches) == 0, \
+            f"Triple backticks should not contain inline code matches, got: {inline_matches}"
+
+    def test_inline_code_between_text(self, app):
+        """Inline code surrounded by text should still match."""
+        doc = QTextDocument()
+        highlighter = MarkdownHighlighter(doc)
+
+        text = "some `code` here"
+        has_match = False
+        for pattern, fmt in highlighter._highlighting_rules:
+            matches = list(pattern.finditer(text))
+            if any(m.group() == "`code`" for m in matches):
+                has_match = True
+                break
+
+        assert has_match, "Should match inline code between text"
