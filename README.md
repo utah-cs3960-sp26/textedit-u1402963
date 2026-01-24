@@ -70,3 +70,14 @@ When a folder is selected:
 # R3
 Improved syntax highlighting, cleaned up many bugs, and added some polish.
 
+# Real syntax highlighting
+I overhauled syntax highlighting to be more accurate and function like a real system rather than just a dumb regex-based system. I did some research on how real syntax highlighting works, wrote a detailed prompt of what I wanted AMP to create, and told it to ask me follow up uqestions to give me a say in every choice and design decision that it makes implicitly. After a couple thousand lines of code, and some manual testing the syntax highlighting looks much better, and works in a way that is much closer to real deal highlighters. The current design is much more extensible and has the capability to be built into a truly advanced system. 
+
+The way this works is kind fo like a lexer, since it maintains state and knows if its in a comment or a <script></script> tag which changes the "mode" its in, very similar to the first pass of a compiler.
+
+This feature was just an edit of the previous version of syntax highlighting, albeit a drastic one. AS far as testing, I made AMP generate tests that essentially set the state of the highlighter, and then verify that it attempts to highlight the code correctly. I also did a decent amount of manual testing which revealed some issues that AMP fixed.
+
+# File Tree Explorer
+The file tree explorer was more challenging to describe and figure out what features I wanted than to implement. Something that helped a lot was telling amp to not make any implicit choices, and instead ask me what behavior I want for each feature. This helped me waste less tokens on AMP making stuff that I don't want or doesn't work as well. At this point I would say that the file explorer works about as well as any, with the exception of the ability to leave the root folder without opening the OS's file explorer, definitely clunky. I'm very happy that I got the right click features working, and that the search bar was such an easy implementation.
+
+A lot of the work in R3 was on polish and ensuring that the editor behaved as expected. I spent some time making things like adding a file from the built in file explorer works as expected, as well as a search feature that allows the user to find files within the integrated explorer quickly. This feature was born when I was trying to test some functionality in my downloads folder and couldn't find the test file that I had saved. The feature was simple and low code, but drastically improved the experiance of using the editor. I also added a button to hide/reopen the file explorer, changed the status indicator to show "New" when a empty new file has not been saved. 
