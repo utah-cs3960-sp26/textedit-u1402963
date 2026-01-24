@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QPushButton,
     QSplitter,
+    QInputDialog,
 )
 from PyQt6.QtGui import QAction, QCloseEvent, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt
@@ -83,11 +84,20 @@ class MainWindow(QMainWindow):
         
         self._sidebar_shortcut = QShortcut(QKeySequence("Ctrl+B"), self)
         self._sidebar_shortcut.activated.connect(self._toggle_sidebar)
+        
+        self._search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        self._search_shortcut.activated.connect(self._focus_file_search)
     
     def _toggle_sidebar(self):
         is_visible = self.sidebar.isVisible()
         self.sidebar.setVisible(not is_visible)
         self.toggle_sidebar_button.setChecked(not is_visible)
+    
+    def _focus_file_search(self):
+        if not self.sidebar.isVisible():
+            self.sidebar.setVisible(True)
+            self.toggle_sidebar_button.setChecked(True)
+        self.sidebar.focus_search()
 
     def _setup_highlighter(self, file_path: str = "", content: str = ""):
         if self.highlighter:
@@ -193,8 +203,8 @@ class MainWindow(QMainWindow):
         left_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(left_spacer)
 
-        self._status_label = QLabel("Saved")
-        self._status_label.setStyleSheet("color: #228B22; font-weight: bold;")
+        self._status_label = QLabel("New")
+        self._status_label.setStyleSheet("color: #1E90FF; font-weight: bold;")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toolbar.addWidget(self._status_label)
 
@@ -215,6 +225,9 @@ class MainWindow(QMainWindow):
         if self._document.is_modified:
             self._status_label.setText("Unsaved")
             self._status_label.setStyleSheet("color: #8B0000; font-weight: bold;")
+        elif not self._document.file_path:
+            self._status_label.setText("New")
+            self._status_label.setStyleSheet("color: #1E90FF; font-weight: bold;")
         else:
             self._status_label.setText("Saved")
             self._status_label.setStyleSheet("color: #228B22; font-weight: bold;")
@@ -268,6 +281,25 @@ class MainWindow(QMainWindow):
                     return
             elif result == "cancel":
                 return
+
+        root_folder = self.sidebar.get_root_folder()
+        if root_folder:
+            name, ok = QInputDialog.getText(self, "New File", "File name:")
+            if ok and name:
+                file_path = os.path.join(root_folder, name)
+                try:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write("")
+                    self.text_edit.clear()
+                    self._document.reset()
+                    self._document.file_path = file_path
+                    self._document.set_content("", mark_as_saved=True)
+                    self._setup_highlighter(file_path)
+                    self._update_status()
+                    self.sidebar.file_tree.highlight_file(file_path)
+                except OSError as e:
+                    QMessageBox.critical(self, "Error", f"Could not create file: {e}")
+            return
 
         self.text_edit.clear()
         self._document.reset()
@@ -398,6 +430,7 @@ class MainWindow(QMainWindow):
         <h3>Navigation</h3>
         <table>
             <tr><td><b>Ctrl+B</b></td><td>Toggle file explorer</td></tr>
+            <tr><td><b>Ctrl+F</b></td><td>Search files in explorer</td></tr>
         </table>
         <h3>Help</h3>
         <table>

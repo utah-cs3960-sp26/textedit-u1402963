@@ -38,9 +38,9 @@ def no_dialogs():
 
 
 class TestUnsavedChangesTracking:
-    def test_initial_state_is_saved(self, window):
+    def test_initial_state_is_new(self, window):
         assert window._is_modified is False
-        assert window._status_label.text() == "Saved"
+        assert window._status_label.text() == "New"
         assert not window.windowTitle().startswith("* ")
 
     def test_typing_marks_unsaved(self, window):
@@ -56,7 +56,7 @@ class TestUnsavedChangesTracking:
 
         window.text_edit.setPlainText("")
         assert window._is_modified is False
-        assert window._status_label.text() == "Saved"
+        assert window._status_label.text() == "New"
 
 
 class TestSaveFile:
@@ -161,15 +161,15 @@ class TestOpenFile:
 
 
 class TestStatusLabel:
-    def test_status_label_shows_saved_initially(self, window):
-        assert window._status_label.text() == "Saved"
+    def test_status_label_shows_new_initially(self, window):
+        assert window._status_label.text() == "New"
 
     def test_status_label_shows_unsaved_after_edit(self, window):
         window.text_edit.setPlainText("edited content")
         assert window._status_label.text() == "Unsaved"
 
-    def test_status_label_saved_style(self, window):
-        assert "#228B22" in window._status_label.styleSheet()
+    def test_status_label_new_style(self, window):
+        assert "#1E90FF" in window._status_label.styleSheet()
 
     def test_status_label_unsaved_style(self, window):
         window.text_edit.setPlainText("modified")
@@ -384,7 +384,7 @@ class TestNewFile:
 
         assert window.text_edit.toPlainText() == ""
         assert window._is_modified is False
-        assert window._status_label.text() == "Saved"
+        assert window._status_label.text() == "New"
 
     def test_new_file_resets_document_path(self, window, tmp_path):
         test_file = tmp_path / "test.txt"

@@ -67,3 +67,6 @@ Initial launch screen:
 When a folder is selected:
 ![alt text](<assets/open folder.png>)
 
+# R3
+Improved syntax highlighting, cleaned up many bugs, and added some polish.
+

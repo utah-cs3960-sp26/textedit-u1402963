@@ -36,9 +36,11 @@ class FileTreeWidget(QTreeView):
     
     Signals:
         file_opened(str): Emitted when a file is double-clicked, with the file path.
+        directory_changed(str): Emitted when a watched directory changes.
     """
     
     file_opened = pyqtSignal(str)
+    directory_changed = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -104,7 +106,8 @@ class FileTreeWidget(QTreeView):
         Returns:
             The absolute path of the selected item, or None if nothing selected.
         """
-        path = self._model.filePath(self.currentIndex())
+        source_index = self._map_to_source(self.currentIndex())
+        path = self._model.filePath(source_index)
         return os.path.normpath(path) if path else path
     
     def highlight_file(self, file_path: str):
@@ -114,9 +117,10 @@ class FileTreeWidget(QTreeView):
         Args:
             file_path: Absolute path to the file to highlight.
         """
-        index = self._model.index(file_path)
-        self.setCurrentIndex(index)
-        self.scrollTo(index)
+        source_index = self._model.index(file_path)
+        proxy_index = self._map_from_source(source_index)
+        self.setCurrentIndex(proxy_index)
+        self.scrollTo(proxy_index)
     
     def _on_double_click(self, index: QModelIndex):
         """
@@ -125,16 +129,31 @@ class FileTreeWidget(QTreeView):
         - If file: emit file_opened signal
         - If folder: toggle expand/collapse
         """
-        if self._model.isDir(index):
+        source_index = self._map_to_source(index)
+        if self._model.isDir(source_index):
             self.setExpanded(index, not self.isExpanded(index))
         else:
-            path = self._model.filePath(index)
+            path = self._model.filePath(source_index)
             self.file_opened.emit(path)
+    
+    def _map_to_source(self, index: QModelIndex) -> QModelIndex:
+        """Map a proxy index to source index if using a proxy model."""
+        proxy_model = self.model()
+        if hasattr(proxy_model, 'mapToSource'):
+            return proxy_model.mapToSource(index)
+        return index
+    
+    def _map_from_source(self, index: QModelIndex) -> QModelIndex:
+        """Map a source index to proxy index if using a proxy model."""
+        proxy_model = self.model()
+        if hasattr(proxy_model, 'mapFromSource'):
+            return proxy_model.mapFromSource(index)
+        return index
     
     def _on_directory_changed(self, path: str):
         """Handle directory change notification from watcher."""
         if self._root_path:
-            self.set_root_folder(self._root_path)
+            self.directory_changed.emit(self._root_path)
     
     def _show_context_menu(self, position):
         """Show the right-click context menu."""
@@ -152,8 +171,9 @@ class FileTreeWidget(QTreeView):
         
         index = self.indexAt(position)
         if index.isValid():
-            path = self._model.filePath(index)
-            is_dir = self._model.isDir(index)
+            source_index = self._map_to_source(index)
+            path = self._model.filePath(source_index)
+            is_dir = self._model.isDir(source_index)
             parent_folder = path if is_dir else os.path.dirname(path)
         else:
             path = self._root_path

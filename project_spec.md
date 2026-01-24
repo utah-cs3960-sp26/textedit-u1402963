@@ -62,27 +62,6 @@ A native, cross-platform text editor built with PyQt6, inspired by Sublime Text.
 - [ ] Multi-line comment highlighting (C/C++/Java)
 - [ ] Python triple-quoted string highlighting
 
-**New Features:**
-- [ ] File tree explorer with collapsible folders
-- [ ] Multi-file tab support
-- [ ] Tab management (close, switch, reorder)
-- [ ] Integrate file tree with tab opening
-
-**Polish (if time allows):**
-- [ ] Save As menu option
-- [ ] Help menu with shortcuts
-- [ ] Python decorator highlighting
-- [ ] Line/column in status bar
-- [ ] Fix shift+enter un-numbered newline bug
-
-### R3 - Split Views & Polish
-**Features:**
-- [ ] Split view support (horizontal/vertical)
-
-**Stretch Goals:**
-- [ ] Auto-indent
-- [ ] Bracket/quote matching
-- [ ] Custom themes/fonts
 
 ## Project Structure
 ```

@@ -278,7 +278,7 @@ class TestSidebarWidget:
         visible_names = []
         for row in range(model.rowCount(root_index)):
             index = model.index(row, 0, root_index)
-            visible_names.append(model.fileName(index))
+            visible_names.append(model.data(index))
         
         assert "refresh_test.txt" in visible_names
 
@@ -291,28 +291,127 @@ class TestSidebarWidget:
 class TestFileTreeAutoRefresh:
     """Tests for auto-refresh functionality."""
 
-    def test_file_watcher_detects_new_file(self, file_tree, temp_folder):
+    def test_file_watcher_detects_new_file(self, sidebar, temp_folder):
         """Tree should auto-update when new file is created."""
         # This test validates the watcher is set up
-        assert file_tree._watcher is not None
-        assert temp_folder in file_tree._watcher.directories()
+        assert sidebar.file_tree._watcher is not None
+        assert temp_folder in sidebar.file_tree._watcher.directories()
 
-    def test_file_watcher_detects_deletion(self, file_tree, temp_folder):
+    def test_file_watcher_detects_deletion(self, sidebar, temp_folder):
         """Tree should auto-update when file is deleted."""
         file_path = os.path.join(temp_folder, "file1.txt")
         
         # Delete file externally
         os.remove(file_path)
         
-        # Trigger watcher callback manually for testing
-        file_tree._on_directory_changed(temp_folder)
+        # Trigger watcher callback manually for testing (sidebar handles the signal)
+        sidebar.file_tree._on_directory_changed(temp_folder)
         
-        model = file_tree.model()
-        root_index = file_tree.rootIndex()
+        model = sidebar.file_tree.model()
+        root_index = sidebar.file_tree.rootIndex()
         
         visible_names = []
         for row in range(model.rowCount(root_index)):
             index = model.index(row, 0, root_index)
-            visible_names.append(model.fileName(index))
+            visible_names.append(model.data(index))
         
         assert "file1.txt" not in visible_names
+
+
+class TestFileTreeWithProxyModel:
+    """Tests for file tree operations when using a proxy model (via sidebar search)."""
+
+    def test_double_click_file_with_filter_active(self, sidebar, temp_folder):
+        """Double-clicking a file should work when search filter is active."""
+        sidebar.search_input.setText("file1")
+        
+        signal_received = []
+        sidebar.file_opened.connect(lambda path: signal_received.append(path))
+        
+        model = sidebar.file_tree.model()
+        root_index = sidebar.file_tree.rootIndex()
+        
+        for row in range(model.rowCount(root_index)):
+            index = model.index(row, 0, root_index)
+            if model.data(index) == "file1.txt":
+                sidebar.file_tree._on_double_click(index)
+                break
+        
+        assert len(signal_received) == 1
+        assert signal_received[0].endswith("file1.txt")
+
+    def test_get_selected_path_with_filter_active(self, sidebar, temp_folder):
+        """get_selected_path should return correct path when filter is active."""
+        sidebar.search_input.setText("file2")
+        
+        model = sidebar.file_tree.model()
+        root_index = sidebar.file_tree.rootIndex()
+        
+        for row in range(model.rowCount(root_index)):
+            index = model.index(row, 0, root_index)
+            if model.data(index) == "file2.py":
+                sidebar.file_tree.setCurrentIndex(index)
+                break
+        
+        selected_path = sidebar.file_tree.get_selected_path()
+        assert selected_path.endswith("file2.py")
+
+    def test_highlight_file_with_filter_active(self, sidebar, temp_folder):
+        """highlight_file should work when filter is active."""
+        file_path = os.path.join(temp_folder, "file1.txt")
+        
+        sidebar.search_input.setText("file1")
+        sidebar.file_tree.highlight_file(file_path)
+        
+        selected_path = sidebar.file_tree.get_selected_path()
+        assert selected_path == os.path.normpath(file_path)
+
+    def test_context_menu_with_filter_active(self, sidebar, temp_folder):
+        """Context menu operations should work when filter is active."""
+        sidebar.search_input.setText("file1")
+        
+        model = sidebar.file_tree.model()
+        root_index = sidebar.file_tree.rootIndex()
+        
+        file_index = None
+        for row in range(model.rowCount(root_index)):
+            index = model.index(row, 0, root_index)
+            if model.data(index) == "file1.txt":
+                file_index = index
+                break
+        
+        assert file_index is not None
+        source_index = sidebar.file_tree._map_to_source(file_index)
+        path = sidebar.file_tree._model.filePath(source_index)
+        assert path.endswith("file1.txt")
+
+    def test_search_filters_files(self, sidebar, temp_folder):
+        """Search input should filter visible files."""
+        sidebar.search_input.setText("file1")
+        
+        model = sidebar.file_tree.model()
+        root_index = sidebar.file_tree.rootIndex()
+        
+        visible_names = []
+        for row in range(model.rowCount(root_index)):
+            index = model.index(row, 0, root_index)
+            visible_names.append(model.data(index))
+        
+        assert "file1.txt" in visible_names
+        assert "file2.py" not in visible_names
+
+    def test_clear_search_shows_all_files(self, sidebar, temp_folder):
+        """Clearing search should show all files again."""
+        sidebar.search_input.setText("file1")
+        sidebar.search_input.clear()
+        
+        model = sidebar.file_tree.model()
+        root_index = sidebar.file_tree.rootIndex()
+        
+        visible_names = []
+        for row in range(model.rowCount(root_index)):
+            index = model.index(row, 0, root_index)
+            visible_names.append(model.data(index))
+        
+        assert "file1.txt" in visible_names
+        assert "file2.py" in visible_names
