@@ -80,4 +80,10 @@ This feature was just an edit of the previous version of syntax highlighting, al
 # File Tree Explorer
 The file tree explorer was more challenging to describe and figure out what features I wanted than to implement. Something that helped a lot was telling amp to not make any implicit choices, and instead ask me what behavior I want for each feature. This helped me waste less tokens on AMP making stuff that I don't want or doesn't work as well. At this point I would say that the file explorer works about as well as any, with the exception of the ability to leave the root folder without opening the OS's file explorer, definitely clunky. I'm very happy that I got the right click features working, and that the search bar was such an easy implementation.
 
+![alt text](assets/file_explorer_with_open_file.png)
+
 A lot of the work in R3 was on polish and ensuring that the editor behaved as expected. I spent some time making things like adding a file from the built in file explorer works as expected, as well as a search feature that allows the user to find files within the integrated explorer quickly. This feature was born when I was trying to test some functionality in my downloads folder and couldn't find the test file that I had saved. The feature was simple and low code, but drastically improved the experiance of using the editor. I also added a button to hide/reopen the file explorer, changed the status indicator to show "New" when a empty new file has not been saved. 
+
+![alt text](assets/new_file_view.png)
+
+![alt text](assets/shortcuts_tutorial.png)
