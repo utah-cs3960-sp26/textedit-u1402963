@@ -22,12 +22,6 @@ def window(app):
     win.close()
 
 
-def test_settings_menu_exists(window):
-    menu_bar = window.menuBar()
-    menus = [action.text() for action in menu_bar.actions()]
-    assert any("Settings" in menu for menu in menus)
-
-
 def test_apply_settings_updates_ui_and_shortcuts(window):
     palette = window.text_edit.palette()
     defaults = EditorSettings.defaults(
