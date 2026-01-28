@@ -12,12 +12,12 @@ python src/main.py
 
 ### Run tests
 ```bash
-pytest
+python -m pytest
 ```
 
 ### Run tests with coverage
 ```bash
-pytest --cov=src
+python --cov=src pytest
 ```
 
 ## Code Style & Conventions
