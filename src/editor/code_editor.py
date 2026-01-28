@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QPlainTextEdit, QWidget
 from PyQt6.QtCore import Qt, QRect, QSize
-from PyQt6.QtGui import QColor, QPainter, QKeyEvent, QUndoStack
+from PyQt6.QtGui import QColor, QPainter, QKeyEvent, QUndoStack, QPalette, QFont
 
 from editor.undo_commands import InsertTextCommand, DeleteTextCommand, ReplaceTextCommand
 
@@ -20,6 +20,8 @@ class LineNumberArea(QWidget):
 class CodeEditor(QPlainTextEdit):
     WHITESPACE_KEYS = {Qt.Key.Key_Space, Qt.Key.Key_Tab, Qt.Key.Key_Return, Qt.Key.Key_Enter}
     MAX_UNDO_STEPS = 100
+    DEFAULT_LINE_NUMBER_BG = QColor(Qt.GlobalColor.lightGray).lighter(120)
+    DEFAULT_LINE_NUMBER_FG = QColor(Qt.GlobalColor.darkGray)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -31,6 +33,8 @@ class CodeEditor(QPlainTextEdit):
         self._pending_insert_text = ""
         self._pending_insert_start = -1
         self._is_applying_undo_redo = False
+        self._line_number_bg = self.DEFAULT_LINE_NUMBER_BG
+        self._line_number_fg = self.DEFAULT_LINE_NUMBER_FG
 
         self.document().setUndoRedoEnabled(False)
 
@@ -92,7 +96,7 @@ class CodeEditor(QPlainTextEdit):
 
     def line_number_area_paint_event(self, event):
         painter = QPainter(self.line_number_area)
-        painter.fillRect(event.rect(), QColor(Qt.GlobalColor.lightGray).lighter(120))
+        painter.fillRect(event.rect(), self._line_number_bg)
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
@@ -102,7 +106,7 @@ class CodeEditor(QPlainTextEdit):
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(block_number + 1)
-                painter.setPen(QColor(Qt.GlobalColor.darkGray))
+                painter.setPen(self._line_number_fg)
                 painter.drawText(
                     0,
                     top,
@@ -288,3 +292,27 @@ class CodeEditor(QPlainTextEdit):
             super().paste()
             cmd = InsertTextCommand(self, text_to_paste, pos)
             self._undo_stack.push(cmd)
+
+    def apply_font(self, family: str, size: int) -> None:
+        """Apply editor font settings."""
+        if not family or size <= 0:
+            return
+        font = QFont(family, size)
+        self.setFont(font)
+
+    def apply_editor_colors(self, background: str, foreground: str) -> None:
+        """Apply editor background and foreground colors."""
+        palette = self.palette()
+        if background:
+            palette.setColor(QPalette.ColorRole.Base, QColor(background))
+        if foreground:
+            palette.setColor(QPalette.ColorRole.Text, QColor(foreground))
+        self.setPalette(palette)
+
+    def set_line_number_colors(self, background: str, foreground: str) -> None:
+        """Set line number area colors."""
+        if background:
+            self._line_number_bg = QColor(background)
+        if foreground:
+            self._line_number_fg = QColor(foreground)
+        self.line_number_area.update()
