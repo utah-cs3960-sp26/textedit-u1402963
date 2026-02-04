@@ -195,11 +195,11 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(select_all_action)
         self._actions["edit_select_all"] = select_all_action
 
-        format_menu = menu_bar.addMenu("F&ormat")
+        settings_menu = menu_bar.addMenu("&Settings")
         preferences_action = QAction("&Preferences...", self)
         preferences_action.setMenuRole(QAction.MenuRole.NoRole)
         preferences_action.triggered.connect(self._open_preferences)
-        format_menu.addAction(preferences_action)
+        settings_menu.addAction(preferences_action)
         self._actions["settings_preferences"] = preferences_action
 
         help_menu = menu_bar.addMenu("&Help")

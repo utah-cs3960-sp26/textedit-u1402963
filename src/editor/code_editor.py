@@ -1,6 +1,15 @@
 from PyQt6.QtWidgets import QPlainTextEdit, QWidget
 from PyQt6.QtCore import Qt, QRect, QSize
-from PyQt6.QtGui import QColor, QPainter, QKeyEvent, QUndoStack, QPalette, QFont
+from PyQt6.QtGui import (
+    QColor,
+    QPainter,
+    QKeyEvent,
+    QUndoStack,
+    QPalette,
+    QFont,
+    QFontMetrics,
+    QFontDatabase,
+)
 
 from editor.undo_commands import InsertTextCommand, DeleteTextCommand, ReplaceTextCommand
 
@@ -22,6 +31,7 @@ class CodeEditor(QPlainTextEdit):
     MAX_UNDO_STEPS = 100
     DEFAULT_LINE_NUMBER_BG = QColor(Qt.GlobalColor.lightGray).lighter(120)
     DEFAULT_LINE_NUMBER_FG = QColor(Qt.GlobalColor.darkGray)
+    LINE_NUMBER_FONT_SIZE = 10
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +45,10 @@ class CodeEditor(QPlainTextEdit):
         self._is_applying_undo_redo = False
         self._line_number_bg = self.DEFAULT_LINE_NUMBER_BG
         self._line_number_fg = self.DEFAULT_LINE_NUMBER_FG
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        fixed_font.setPointSize(self.LINE_NUMBER_FONT_SIZE)
+        self._line_number_font = fixed_font
+        self.line_number_area.setFont(self._line_number_font)
 
         self.document().setUndoRedoEnabled(False)
 
@@ -73,7 +87,8 @@ class CodeEditor(QPlainTextEdit):
         while max_block >= 10:
             max_block //= 10
             digits += 1
-        space = 3 + self.fontMetrics().horizontalAdvance("9") * digits + 3
+        metrics = QFontMetrics(self._line_number_font)
+        space = 3 + metrics.horizontalAdvance("9") * digits + 3
         return space
 
     def _update_line_number_area_width(self, _):
@@ -97,6 +112,7 @@ class CodeEditor(QPlainTextEdit):
     def line_number_area_paint_event(self, event):
         painter = QPainter(self.line_number_area)
         painter.fillRect(event.rect(), self._line_number_bg)
+        painter.setFont(self._line_number_font)
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
@@ -111,8 +127,8 @@ class CodeEditor(QPlainTextEdit):
                     0,
                     top,
                     self.line_number_area.width() - 3,
-                    self.fontMetrics().height(),
-                    Qt.AlignmentFlag.AlignRight,
+                    int(self.blockBoundingRect(block).height()),
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                     number,
                 )
             block = block.next()
@@ -299,6 +315,10 @@ class CodeEditor(QPlainTextEdit):
             return
         font = QFont(family, size)
         self.setFont(font)
+        # Keep line number font fixed regardless of editor font changes.
+        self.line_number_area.setFont(self._line_number_font)
+        self._update_line_number_area_width(0)
+        self.line_number_area.update()
 
     def apply_editor_colors(self, background: str, foreground: str) -> None:
         """Apply editor background and foreground colors."""

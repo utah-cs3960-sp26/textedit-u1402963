@@ -38,6 +38,13 @@ class ColorButton(QPushButton):
         self._update_style()
         self.clicked.connect(self._choose_color)
 
+    def set_color(self, color: QColor | str) -> None:
+        if isinstance(color, QColor):
+            self._color = QColor(color)
+        else:
+            self._color = QColor(color)
+        self._update_style()
+
     def _update_style(self) -> None:
         self.setText(self._color.name())
         self.setStyleSheet(f"background-color: {self._color.name()};")
@@ -45,8 +52,7 @@ class ColorButton(QPushButton):
     def _choose_color(self) -> None:
         chosen = QColorDialog.getColor(self._color, self, "Select Color")
         if chosen.isValid():
-            self._color = chosen
-            self._update_style()
+            self.set_color(chosen)
 
     def color(self) -> str:
         return self._color.name()
@@ -162,7 +168,10 @@ class PreferencesDialog(QDialog):
 
     def _build_shortcuts_tab(self) -> QWidget:
         container = QWidget()
-        layout = QVBoxLayout(container)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
 
         for group_name, action_ids in ACTION_GROUPS.items():
             group = QGroupBox(group_name)
@@ -176,6 +185,9 @@ class PreferencesDialog(QDialog):
             layout.addWidget(group)
 
         layout.addStretch(1)
+        scroll.setWidget(content)
+        outer = QVBoxLayout(container)
+        outer.addWidget(scroll)
         return container
 
     def get_settings(self) -> EditorSettings:
@@ -200,26 +212,32 @@ class PreferencesDialog(QDialog):
 
     def _reset_to_defaults(self) -> None:
         defaults = self._default_settings
+        current_index = self._tabs.currentIndex()
+        if current_index == 0:
+            self._reset_general_tab(defaults)
+        elif current_index == 1:
+            self._reset_colors_tab(defaults)
+        elif current_index == 2:
+            self._reset_shortcuts_tab(defaults)
+
+    def _reset_general_tab(self, defaults: EditorSettings) -> None:
         self._font_family.setCurrentFont(QFont(defaults.font_family))
         self._font_size.setValue(defaults.font_size)
 
-        self._color_buttons["editor_background"]._color = QColor(defaults.editor_background)
-        self._color_buttons["editor_background"]._update_style()
-        self._color_buttons["editor_foreground"]._color = QColor(defaults.editor_foreground)
-        self._color_buttons["editor_foreground"]._update_style()
-        self._color_buttons["line_number_background"]._color = QColor(
+    def _reset_colors_tab(self, defaults: EditorSettings) -> None:
+        self._color_buttons["editor_background"].set_color(defaults.editor_background)
+        self._color_buttons["editor_foreground"].set_color(defaults.editor_foreground)
+        self._color_buttons["line_number_background"].set_color(
             defaults.line_number_background
         )
-        self._color_buttons["line_number_background"]._update_style()
-        self._color_buttons["line_number_foreground"]._color = QColor(
+        self._color_buttons["line_number_foreground"].set_color(
             defaults.line_number_foreground
         )
-        self._color_buttons["line_number_foreground"]._update_style()
 
         for key, color in defaults.syntax_colors.items():
-            self._color_buttons[key]._color = QColor(color)
-            self._color_buttons[key]._update_style()
+            self._color_buttons[key].set_color(color)
 
+    def _reset_shortcuts_tab(self, defaults: EditorSettings) -> None:
         for action_id, sequence in defaults.shortcuts.items():
             editor = self._shortcut_edits.get(action_id)
             if editor is not None:
