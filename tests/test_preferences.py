@@ -78,10 +78,8 @@ def test_preferences_dialog_collects_updates(app):
     dialog._font_size.setValue(defaults.font_size + 2)
     dialog._font_family.setCurrentFont(QFont(defaults.font_family))
 
-    dialog._color_buttons["editor_background"]._color = QColor("#010203")
-    dialog._color_buttons["editor_background"]._update_style()
-    dialog._color_buttons["keyword"]._color = QColor("#0a0b0c")
-    dialog._color_buttons["keyword"]._update_style()
+    dialog._color_buttons["editor_background"].set_color(QColor("#010203"))
+    dialog._color_buttons["keyword"].set_color(QColor("#0a0b0c"))
 
     dialog._shortcut_edits["file_open"].setKeySequence(QKeySequence("Ctrl+Alt+O"))
 
