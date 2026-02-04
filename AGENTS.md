@@ -1,7 +1,7 @@
 # AGENTS.md - FART Text Editor
 
 ## Project Overview
-**FART (Fast Async Runtime Text-editor)** is a cross-platform text editor built with PyQt6, inspired by Sublime Text. This is a class project for CS3960.
+This is a cross-platform text editor built with PyQt6, inspired by Sublime Text. This is a class project for CS3960.
 
 ## Commands
 
