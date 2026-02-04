@@ -118,13 +118,23 @@ def test_preferences_reset_to_defaults_button(app):
             break
     assert reset_button is not None
 
+    dialog._tabs.setCurrentIndex(0)
     reset_button.click()
 
     assert dialog._font_size.value() == defaults.font_size
+    assert dialog._color_buttons["editor_background"].color() == modified.editor_background
+    assert dialog._shortcut_edits["file_open"].keySequence().toString() == "Ctrl+Alt+O"
+
+    dialog._tabs.setCurrentIndex(1)
+    reset_button.click()
     assert dialog._color_buttons["editor_background"].color() == defaults.editor_background
     assert dialog._color_buttons["line_number_background"].color() == defaults.line_number_background
     assert (
         dialog._color_buttons["keyword"].color().lower()
         == defaults.syntax_colors["keyword"].lower()
     )
+    assert dialog._shortcut_edits["file_open"].keySequence().toString() == "Ctrl+Alt+O"
+
+    dialog._tabs.setCurrentIndex(2)
+    reset_button.click()
     assert dialog._shortcut_edits["file_open"].keySequence().toString() == defaults.shortcuts["file_open"]
