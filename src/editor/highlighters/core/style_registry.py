@@ -31,6 +31,21 @@ class StyleRegistry:
 
     _instance: "StyleRegistry | None" = None
 
+    DEFAULT_COLORS = {
+        StyleId.KEYWORD: "#569CD6",
+        StyleId.STRING: "#CE9178",
+        StyleId.COMMENT: "#6A9955",
+        StyleId.NUMBER: "#B5CEA8",
+        StyleId.OPERATOR: "#D4D4D4",
+        StyleId.TAG: "#569CD6",
+        StyleId.ATTR_NAME: "#9CDCFE",
+        StyleId.ATTR_VALUE: "#CE9178",
+        StyleId.PUNCTUATION: "#D4D4D4",
+        StyleId.IDENTIFIER: "#DCDCAA",
+        StyleId.EMBEDDED: "#C586C0",
+        StyleId.PLAIN: "#D4D4D4",
+    }
+
     def __init__(self) -> None:
         """Initialize the registry with pre-created formats."""
         self._formats: Dict[StyleId, QTextCharFormat] = {}
@@ -45,67 +60,55 @@ class StyleRegistry:
 
     def _create_formats(self) -> None:
         """Create all QTextCharFormat objects with dark theme colors."""
-        # KEYWORD: #569CD6 (blue), bold
         keyword_fmt = QTextCharFormat()
-        keyword_fmt.setForeground(QColor("#569CD6"))
+        keyword_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.KEYWORD]))
         keyword_fmt.setFontWeight(QFont.Weight.Bold)
         self._formats[StyleId.KEYWORD] = keyword_fmt
 
-        # STRING: #CE9178 (orange)
         string_fmt = QTextCharFormat()
-        string_fmt.setForeground(QColor("#CE9178"))
+        string_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.STRING]))
         self._formats[StyleId.STRING] = string_fmt
 
-        # COMMENT: #6A9955 (green), italic
         comment_fmt = QTextCharFormat()
-        comment_fmt.setForeground(QColor("#6A9955"))
+        comment_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.COMMENT]))
         comment_fmt.setFontItalic(True)
         self._formats[StyleId.COMMENT] = comment_fmt
 
-        # NUMBER: #B5CEA8 (light green)
         number_fmt = QTextCharFormat()
-        number_fmt.setForeground(QColor("#B5CEA8"))
+        number_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.NUMBER]))
         self._formats[StyleId.NUMBER] = number_fmt
 
-        # OPERATOR: #D4D4D4 (white)
         operator_fmt = QTextCharFormat()
-        operator_fmt.setForeground(QColor("#D4D4D4"))
+        operator_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.OPERATOR]))
         self._formats[StyleId.OPERATOR] = operator_fmt
 
-        # TAG: #569CD6 (blue), bold
         tag_fmt = QTextCharFormat()
-        tag_fmt.setForeground(QColor("#569CD6"))
+        tag_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.TAG]))
         tag_fmt.setFontWeight(QFont.Weight.Bold)
         self._formats[StyleId.TAG] = tag_fmt
 
-        # ATTR_NAME: #9CDCFE (light blue)
         attr_name_fmt = QTextCharFormat()
-        attr_name_fmt.setForeground(QColor("#9CDCFE"))
+        attr_name_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.ATTR_NAME]))
         self._formats[StyleId.ATTR_NAME] = attr_name_fmt
 
-        # ATTR_VALUE: #CE9178 (orange)
         attr_value_fmt = QTextCharFormat()
-        attr_value_fmt.setForeground(QColor("#CE9178"))
+        attr_value_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.ATTR_VALUE]))
         self._formats[StyleId.ATTR_VALUE] = attr_value_fmt
 
-        # PUNCTUATION: #D4D4D4 (white)
         punctuation_fmt = QTextCharFormat()
-        punctuation_fmt.setForeground(QColor("#D4D4D4"))
+        punctuation_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.PUNCTUATION]))
         self._formats[StyleId.PUNCTUATION] = punctuation_fmt
 
-        # IDENTIFIER: #DCDCAA (yellow)
         identifier_fmt = QTextCharFormat()
-        identifier_fmt.setForeground(QColor("#DCDCAA"))
+        identifier_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.IDENTIFIER]))
         self._formats[StyleId.IDENTIFIER] = identifier_fmt
 
-        # EMBEDDED: #C586C0 (purple)
         embedded_fmt = QTextCharFormat()
-        embedded_fmt.setForeground(QColor("#C586C0"))
+        embedded_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.EMBEDDED]))
         self._formats[StyleId.EMBEDDED] = embedded_fmt
 
-        # PLAIN: #D4D4D4 (white)
         plain_fmt = QTextCharFormat()
-        plain_fmt.setForeground(QColor("#D4D4D4"))
+        plain_fmt.setForeground(QColor(self.DEFAULT_COLORS[StyleId.PLAIN]))
         self._formats[StyleId.PLAIN] = plain_fmt
 
     def get_format(self, style_id: StyleId) -> QTextCharFormat:
@@ -118,3 +121,19 @@ class StyleRegistry:
             The corresponding QTextCharFormat.
         """
         return self._formats[style_id]
+
+    def set_color(self, style_id: StyleId, color: QColor | str) -> None:
+        """Override the foreground color for a style."""
+        if style_id not in self._formats:
+            return
+        fmt = self._formats[style_id]
+        fmt.setForeground(QColor(color))
+
+    def get_color(self, style_id: StyleId) -> str:
+        """Return the current color for a style as a hex string."""
+        return self._formats[style_id].foreground().color().name()
+
+    def reset_colors(self) -> None:
+        """Reset all colors to defaults."""
+        for style_id, color in self.DEFAULT_COLORS.items():
+            self.set_color(style_id, color)
