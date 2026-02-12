@@ -83,10 +83,6 @@ class MainWindow(QMainWindow):
     def _original_content(self):
         return self._document.original_content
 
-    @_original_content.setter
-    def _original_content(self, value):
-        self._document._original_content = value
-
     def _setup_central_widget(self):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.sidebar = SidebarWidget()

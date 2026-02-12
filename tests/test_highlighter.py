@@ -160,6 +160,9 @@ class TestLanguageDetectorExtension:
     def test_empty_path(self):
         assert LanguageDetector.detect_from_extension("") == ""
 
+    def test_js_extension_not_supported(self):
+        assert LanguageDetector.detect_from_extension("app.js") == ""
+
 
 class TestLanguageDetectorContent:
     def test_detect_python_by_import(self):
@@ -168,6 +171,10 @@ class TestLanguageDetectorContent:
 
     def test_detect_python_by_class(self):
         content = "from typing import List\n\nclass MyClass:\n    def __init__(self):\n        pass"
+        assert LanguageDetector.detect_from_content(content) == "python"
+
+    def test_detect_python_by_class_without_def(self):
+        content = "from typing import Any\n\nclass MyClass:\n    pass"
         assert LanguageDetector.detect_from_content(content) == "python"
 
     def test_detect_c_by_include(self):
@@ -180,6 +187,10 @@ class TestLanguageDetectorContent:
 
     def test_detect_java_by_class(self):
         content = "package com.example;\n\npublic class Main {\n    public static void main(String[] args) {}\n}"
+        assert LanguageDetector.detect_from_content(content) == "java"
+
+    def test_detect_java_by_package_only(self):
+        content = "package com.example.myapp;"
         assert LanguageDetector.detect_from_content(content) == "java"
 
     def test_detect_html_by_doctype(self):
@@ -197,6 +208,14 @@ class TestLanguageDetectorContent:
     def test_detect_markdown_by_headers(self):
         content = "# Title\n\n## Section\n\nSome text here."
         assert LanguageDetector.detect_from_content(content) == "markdown"
+
+    def test_detect_markdown_by_list_and_link(self):
+        content = "- item\n[link](https://example.com)"
+        assert LanguageDetector.detect_from_content(content) == "markdown"
+
+    def test_detect_json_returns_plain_without_colon(self):
+        content = "{\n  \"name\"\n}"
+        assert LanguageDetector.detect_from_content(content) == "plain"
 
     def test_plain_text_fallback(self):
         content = "Just some plain text without any recognizable patterns."
@@ -454,6 +473,11 @@ class TestOtherHighlighterBehavior:
                 break
         assert has_header_match, "Markdown highlighter should have pattern matching headers"
 
+    def test_plain_text_highlighter_no_rules(self, app):
+        doc = QTextDocument()
+        highlighter = PlainTextHighlighter(doc)
+        assert highlighter._highlighting_rules == []
+
 
 class TestGetSaveFilter:
     def test_returns_python_filter_for_py_file(self):
@@ -465,6 +489,10 @@ class TestGetSaveFilter:
 
     def test_returns_text_filter_for_unknown_content(self):
         result = LanguageDetector.get_save_filter("file.xyz", "random content")
+        assert result == "Text (*.txt)"
+
+    def test_returns_all_files_filter_for_unknown_lang(self):
+        result = LanguageDetector.get_save_filter("", "")
         assert result == "Text (*.txt)"
 
 
@@ -538,6 +566,56 @@ class TestMultilineBlockComments:
         first_block = doc.firstBlock()
         assert first_block.userState() == 0
 
+    def test_c_multiline_comment_continues(self, app):
+        """Continuation of block comments should keep the state active."""
+        doc = QTextDocument()
+        highlighter = CHighlighter(doc)
+        doc.setPlainText("/* start\ncontinued")
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() == highlighter.IN_BLOCK_COMMENT
+
+    def test_cpp_multiline_comment_continues(self, app):
+        """Continuation of block comments should keep the state active."""
+        doc = QTextDocument()
+        highlighter = CppHighlighter(doc)
+        doc.setPlainText("/* start\ncontinued")
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() == highlighter.IN_BLOCK_COMMENT
+
+    def test_java_multiline_comment_continues(self, app):
+        """Continuation of block comments should keep the state active."""
+        doc = QTextDocument()
+        highlighter = JavaHighlighter(doc)
+        doc.setPlainText("/* start\ncontinued")
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() == highlighter.IN_BLOCK_COMMENT
+
+    def test_cpp_multiline_comment_multiple_sections(self, app):
+        """Multiple comment sections should be processed in one block."""
+        doc = QTextDocument()
+        highlighter = CppHighlighter(doc)
+        doc.setPlainText("/* one */ /* two */")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == 0
+
+    def test_java_multiline_comment_multiple_sections(self, app):
+        """Multiple comment sections should be processed in one block."""
+        doc = QTextDocument()
+        highlighter = JavaHighlighter(doc)
+        doc.setPlainText("/* one */ /* two */")
+        highlighter.rehighlight()
+
+        first_block = doc.firstBlock()
+        assert first_block.userState() == 0
+
 
 class TestPythonTripleQuotedStrings:
     """Tests for Python triple-quoted string highlighting."""
@@ -589,6 +667,26 @@ class TestPythonTripleQuotedStrings:
 
         first_block = doc.firstBlock()
         assert first_block.userState() == 0
+
+    def test_python_triple_double_continues(self, app):
+        """Continuation line should stay in triple double state."""
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        doc.setPlainText('"""start\ncontinued\n"""')
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() == highlighter.IN_TRIPLE_DOUBLE
+
+    def test_python_triple_single_continues(self, app):
+        """Continuation line should stay in triple single state."""
+        doc = QTextDocument()
+        highlighter = PythonHighlighter(doc)
+        doc.setPlainText("'''start\ncontinued\n'''")
+        highlighter.rehighlight()
+
+        second_block = doc.firstBlock().next()
+        assert second_block.userState() == highlighter.IN_TRIPLE_SINGLE
 
 
 class TestMarkdownInlineCode:

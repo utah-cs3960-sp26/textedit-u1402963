@@ -187,3 +187,109 @@ class TestSaveAs:
 
         assert new_file.exists()
         assert window._document.file_path == str(new_file)
+
+
+class TestFileControllerErrorHandling:
+    def test_open_permission_error(self, tmp_path):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        from unittest.mock import patch
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        
+        with patch.object(ctrl.file_manager, 'read_file', side_effect=PermissionError):
+            success, content, error = ctrl.open_file("test.txt")
+        
+        assert success is False
+        assert "Permission denied" in error
+    
+    def test_open_unicode_error(self, tmp_path):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        from unittest.mock import patch
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        
+        with patch.object(ctrl.file_manager, 'read_file', side_effect=UnicodeDecodeError('utf-8', b'', 0, 1, '')):
+            success, content, error = ctrl.open_file("binary.exe")
+        
+        assert success is False
+        assert "binary" in error.lower()
+    
+    def test_open_generic_error(self, tmp_path):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        from unittest.mock import patch
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        
+        with patch.object(ctrl.file_manager, 'read_file', side_effect=IOError("disk error")):
+            success, content, error = ctrl.open_file("broken.txt")
+        
+        assert success is False
+        assert "disk error" in error
+    
+    def test_save_permission_error(self):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        from unittest.mock import patch
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        
+        with patch.object(ctrl.file_manager, 'write_file', side_effect=PermissionError):
+            success, error = ctrl.save_file("/readonly/file.txt", "content")
+        
+        assert success is False
+        assert "Permission denied" in error
+    
+    def test_get_suggested_path_empty_when_no_file(self):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        assert ctrl.get_suggested_path() == ""
+    
+    def test_is_modified_property(self):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        assert ctrl.is_modified is False
+        
+        doc._current_content = "changed"
+        assert ctrl.is_modified is True
+    
+    def test_current_file_property(self):
+        from editor.controllers.file_controller import FileController
+        from editor.models.document import DocumentModel
+        
+        doc = DocumentModel()
+        ctrl = FileController(doc)
+        assert ctrl.current_file is None
+        
+        doc.file_path = "/some/file.txt"
+        assert ctrl.current_file == "/some/file.txt"
+
+
+class TestDocumentModelProperties:
+    def test_original_content_getter(self):
+        from editor.models.document import DocumentModel
+        doc = DocumentModel()
+        assert doc.original_content == ""
+        
+        doc.set_content("hello", mark_as_saved=True)
+        assert doc.original_content == "hello"
+    
+    def test_current_content_getter(self):
+        from editor.models.document import DocumentModel
+        doc = DocumentModel()
+        assert doc.current_content == ""
+        
+        doc.current_content = "world"
+        assert doc.current_content == "world"

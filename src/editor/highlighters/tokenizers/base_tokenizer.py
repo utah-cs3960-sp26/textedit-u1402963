@@ -1,13 +1,4 @@
-from abc import ABC, abstractmethod
+# Re-export from core to avoid duplicate base class definitions
+from editor.highlighters.core.base_tokenizer import BaseTokenizer
 
-from editor.highlighters.core.types import StateStack, TokenizeResult
-
-
-class BaseTokenizer(ABC):
-    @abstractmethod
-    def get_lang_id(self) -> str:
-        pass
-
-    @abstractmethod
-    def tokenize_line(self, line: str, state_stack: StateStack) -> TokenizeResult:
-        pass
+__all__ = ["BaseTokenizer"]

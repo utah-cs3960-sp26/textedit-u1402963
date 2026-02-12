@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 
 from PyQt6.QtGui import QColor, QFont, QKeySequence
 from PyQt6.QtWidgets import QApplication, QPushButton
@@ -136,3 +137,78 @@ def test_preferences_reset_to_defaults_button(app):
     dialog._tabs.setCurrentIndex(2)
     reset_button.click()
     assert dialog._shortcut_edits["file_open"].keySequence().toString() == defaults.shortcuts["file_open"]
+
+
+def test_color_button_choose_color_applies_selection(app):
+    """ColorButton should apply QColorDialog selection when valid."""
+    from PyQt6.QtGui import QColor
+
+    defaults = EditorSettings.defaults(
+        editor_background="#202020",
+        editor_foreground="#f0f0f0",
+        line_number_background="#303030",
+        line_number_foreground="#a0a0a0",
+    )
+    dialog = PreferencesDialog(defaults, defaults)
+    button = dialog._color_buttons["editor_background"]
+
+    with patch("editor.preferences_dialog.QColorDialog.getColor") as mock_dialog:
+        mock_dialog.return_value = QColor("#112233")
+        button._choose_color()
+
+    assert button.color() == "#112233"
+
+
+def test_settings_save_persists_all_fields(app):
+    """EditorSettings.save() should write all fields to QSettings store."""
+    from PyQt6.QtCore import QSettings
+    defaults = EditorSettings.defaults(
+        editor_background="#111111",
+        editor_foreground="#eeeeee", 
+        line_number_background="#222222",
+        line_number_foreground="#dddddd",
+    )
+    
+    store = QSettings("TestOrg", "TestApp_save")
+    defaults.save(store)
+    
+    assert store.value("font/family") == defaults.font_family
+    assert int(store.value("font/size")) == defaults.font_size
+    assert store.value("colors/editor_background") == "#111111"
+    assert store.value("colors/editor_foreground") == "#eeeeee"
+    assert store.value("colors/line_number_background") == "#222222"
+    assert store.value("colors/line_number_foreground") == "#dddddd"
+    
+    for key, color in defaults.syntax_colors.items():
+        assert store.value(f"colors/syntax/{key}") == color
+    
+    for key, shortcut in defaults.shortcuts.items():
+        assert store.value(f"shortcuts/{key}") == shortcut
+    
+    store.clear()
+
+
+def test_settings_save_then_load_roundtrip(app):
+    """Saving then loading should produce identical settings."""
+    from PyQt6.QtCore import QSettings
+    original = EditorSettings.defaults(
+        editor_background="#aabbcc",
+        editor_foreground="#ddeeff",
+        line_number_background="#112233",
+        line_number_foreground="#445566",
+    )
+    original.font_size = 18
+    original.syntax_colors["keyword"] = "#ff0000"
+    original.shortcuts["file_new"] = "Ctrl+Alt+N"
+    
+    store = QSettings("TestOrg", "TestApp_roundtrip")
+    original.save(store)
+    
+    loaded = EditorSettings.load(store, original)
+    assert loaded.font_family == original.font_family
+    assert loaded.font_size == 18
+    assert loaded.editor_background == "#aabbcc"
+    assert loaded.syntax_colors["keyword"] == "#ff0000"
+    assert loaded.shortcuts["file_new"] == "Ctrl+Alt+N"
+    
+    store.clear()

@@ -178,6 +178,30 @@ class TestLineNumberArea:
         event = QPaintEvent(rect)
         editor.line_number_area_paint_event(event)
 
+    def test_line_number_paint_skips_empty_rect(self, editor):
+        """Painting with an empty rect should not enter the loop."""
+        from PyQt6.QtGui import QPaintEvent
+        from PyQt6.QtCore import QRect
+
+        editor.setPlainText("line1")
+        editor.show()
+
+        rect = QRect(0, 0, editor.line_number_area.width(), 0)
+        event = QPaintEvent(rect)
+        editor.line_number_area_paint_event(event)
+
+    def test_line_number_paint_skips_offscreen_block(self, editor):
+        """Painting should skip blocks above the requested rect."""
+        from PyQt6.QtGui import QPaintEvent
+        from PyQt6.QtCore import QRect
+
+        editor.setPlainText("line1\nline2\nline3")
+        editor.show()
+
+        rect = QRect(0, 1000, editor.line_number_area.width(), 10)
+        event = QPaintEvent(rect)
+        editor.line_number_area_paint_event(event)
+
 
 class TestKeyboardShortcuts:
     """Tests for keyboard shortcuts (Ctrl+Z, Ctrl+Y, etc.)."""
@@ -1194,3 +1218,507 @@ class TestUndoRedoMemoryAndPerformance:
         editor.redo()
         
         assert len(editor.toPlainText()) == len(content_after_undo) + 1
+
+
+class TestCodeEditorUncoveredPaths:
+    """Tests targeting uncovered lines in code_editor.py."""
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    def _type_char(self, editor, char):
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        key = getattr(Qt.Key, f"Key_{char.upper()}")
+        event = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier, char)
+        editor.keyPressEvent(event)
+
+    def _type_space(self, editor):
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier, " ")
+        editor.keyPressEvent(event)
+
+    def _select_all(self, editor):
+        cursor = editor.textCursor()
+        cursor.select(cursor.SelectionType.Document)
+        editor.setTextCursor(cursor)
+
+    def _select_range(self, editor, start, end):
+        cursor = editor.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, cursor.MoveMode.KeepAnchor)
+        editor.setTextCursor(cursor)
+
+    def _press_key(self, editor, key, modifiers=None, text=""):
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        if modifiers is None:
+            modifiers = Qt.KeyboardModifier.NoModifier
+        event = QKeyEvent(QEvent.Type.KeyPress, key, modifiers, text)
+        editor.keyPressEvent(event)
+
+    def _press_enter(self, editor):
+        from PyQt6.QtCore import Qt
+        self._press_key(editor, Qt.Key.Key_Return, text="\r")
+
+    # ── Lines 165-170: Ctrl+X and Ctrl+V ────────────────────────────
+
+    def test_ctrl_x_cuts_selected_text(self, editor):
+        """Ctrl+X should cut selected text to clipboard and support undo."""
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QApplication
+
+        editor.setPlainText("hello world")
+        self._select_range(editor, 0, 5)  # select "hello"
+
+        self._press_key(editor, Qt.Key.Key_X, Qt.KeyboardModifier.ControlModifier)
+
+        assert editor.toPlainText() == " world"
+        assert QApplication.clipboard().text() == "hello"
+
+        editor.undo()
+        assert editor.toPlainText() == "hello world"
+
+    def test_ctrl_v_pastes_text(self, editor):
+        """Ctrl+V should paste text from clipboard and support undo."""
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QApplication
+
+        editor.setPlainText("ab")
+        QApplication.clipboard().setText("XY")
+
+        cursor = editor.textCursor()
+        cursor.setPosition(1)
+        editor.setTextCursor(cursor)
+
+        self._press_key(editor, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+
+        assert editor.toPlainText() == "aXYb"
+
+        editor.undo()
+        assert editor.toPlainText() == "ab"
+
+    def test_ctrl_shortcut_unhandled_key_no_changes(self, editor):
+        """Unhandled Ctrl+Key should fall through without changes."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+
+        editor.setPlainText("abc")
+        cursor = editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_P, Qt.KeyboardModifier.ControlModifier, "")
+        editor.keyPressEvent(event)
+
+        assert editor.toPlainText() == "abc"
+
+    # ── Lines 195-207: Delete key ───────────────────────────────────
+
+    def test_delete_key_with_selection(self, editor):
+        """Delete key with selection removes selected text; undo restores it."""
+        from PyQt6.QtCore import Qt
+
+        editor.setPlainText("abcdef")
+        self._select_range(editor, 1, 4)  # select "bcd"
+
+        self._press_key(editor, Qt.Key.Key_Delete)
+
+        assert editor.toPlainText() == "aef"
+
+        editor.undo()
+        assert editor.toPlainText() == "abcdef"
+
+    def test_delete_key_without_selection(self, editor):
+        """Delete key without selection removes char at cursor; undo restores it."""
+        from PyQt6.QtCore import Qt
+
+        editor.setPlainText("abc")
+        cursor = editor.textCursor()
+        cursor.setPosition(1)
+        editor.setTextCursor(cursor)
+
+        self._press_key(editor, Qt.Key.Key_Delete)
+
+        assert editor.toPlainText() == "ac"
+
+        editor.undo()
+        assert editor.toPlainText() == "abc"
+
+    def test_delete_key_at_end_of_document(self, editor):
+        """Delete key at end of document should be a no-op."""
+        from PyQt6.QtCore import Qt
+
+        editor.setPlainText("ab")
+        cursor = editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+
+        self._press_key(editor, Qt.Key.Key_Delete)
+
+        assert editor.toPlainText() == "ab"
+
+    # ── Lines 217-227: Whitespace key with selection ────────────────
+
+    def test_space_replaces_selection(self, editor):
+        """Space key with selection replaces selected text; undo restores it."""
+        editor.setPlainText("abcdef")
+        self._select_range(editor, 1, 4)  # select "bcd"
+
+        self._type_space(editor)
+
+        assert editor.toPlainText() == "a ef"
+
+        editor.undo()
+        assert editor.toPlainText() == "abcdef"
+
+    def test_enter_replaces_selection(self, editor):
+        """Enter key with selection replaces selected text with newline; undo restores it."""
+        editor.setPlainText("abcdef")
+        self._select_range(editor, 1, 4)  # select "bcd"
+
+        self._press_enter(editor)
+
+        assert editor.toPlainText() == "a\nef"
+
+        editor.undo()
+        assert editor.toPlainText() == "abcdef"
+
+    # ── Lines 257-258: Non-printable, non-special key ───────────────
+
+    def test_non_printable_key_falls_through(self, editor):
+        """A non-printable, non-special key (e.g. arrow) should not corrupt text."""
+        from PyQt6.QtCore import Qt
+
+        editor.setPlainText("test")
+        cursor = editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+
+        # Type some chars to build up a pending insert, then press arrow to flush
+        self._type_char(editor, "x")
+        self._press_key(editor, Qt.Key.Key_Left)
+
+        # Text should have the char, pending insert should be flushed (undo-able)
+        assert "x" in editor.toPlainText()
+        editor.undo()
+        assert editor.toPlainText() == "test"
+
+    # ── Lines 261-262: focusOutEvent ────────────────────────────────
+
+    def test_focus_out_flushes_pending_insert(self, editor):
+        """focusOutEvent should flush pending insert so it becomes undo-able."""
+        from PyQt6.QtCore import QEvent
+        from PyQt6.QtGui import QFocusEvent
+
+        editor.setPlainText("")
+        self._type_char(editor, "a")
+        self._type_char(editor, "b")
+
+        # Pending insert hasn't been pushed yet
+        assert editor.toPlainText() == "ab"
+
+        # Simulate focus out
+        focus_event = QFocusEvent(QEvent.Type.FocusOut)
+        editor.focusOutEvent(focus_event)
+
+        # Now undo should remove the pending "ab"
+        editor.undo()
+        assert editor.toPlainText() == ""
+
+    # ── Lines 280-284: cut() with selection ─────────────────────────
+
+    def test_cut_with_selection_and_undo(self, editor):
+        """cut() removes selected text, puts it on clipboard, and undo restores it."""
+        from PyQt6.QtWidgets import QApplication
+
+        editor.setPlainText("hello world")
+        self._select_range(editor, 6, 11)  # select "world"
+
+        editor.cut()
+
+        assert editor.toPlainText() == "hello "
+        assert QApplication.clipboard().text() == "world"
+
+        editor.undo()
+        assert editor.toPlainText() == "hello world"
+
+    def test_cut_without_selection_noop(self, editor):
+        """cut() without selection should not change content or undo stack."""
+        editor.setPlainText("hello")
+        stack_count = editor.undo_stack.count()
+
+        editor.cut()
+
+        assert editor.toPlainText() == "hello"
+        assert editor.undo_stack.count() == stack_count
+
+    # ── Line 295: paste() with empty clipboard ──────────────────────
+
+    def test_paste_with_empty_clipboard_is_noop(self, editor):
+        """paste() with empty clipboard should not modify text."""
+        from PyQt6.QtWidgets import QApplication
+
+        editor.setPlainText("unchanged")
+        QApplication.clipboard().setText("")
+
+        editor.paste()
+
+        assert editor.toPlainText() == "unchanged"
+
+    # ── Lines 300-305: paste() over selection ────────────────────────
+
+    def test_paste_over_selection_replaces_and_undo(self, editor):
+        """paste() over selection replaces it; undo restores original."""
+        from PyQt6.QtWidgets import QApplication
+
+        editor.setPlainText("hello world")
+        QApplication.clipboard().setText("PLANET")
+        self._select_range(editor, 6, 11)  # select "world"
+
+        editor.paste()
+
+        assert editor.toPlainText() == "hello PLANET"
+
+        editor.undo()
+        assert editor.toPlainText() == "hello world"
+
+    def test_apply_editor_colors_background_only(self, editor):
+        """apply_editor_colors should handle background-only updates."""
+        palette = editor.palette()
+        original_text = palette.color(palette.ColorRole.Text).name()
+
+        editor.apply_editor_colors("#112233", "")
+
+        updated = editor.palette()
+        assert updated.color(updated.ColorRole.Base).name() == "#112233"
+        assert updated.color(updated.ColorRole.Text).name() == original_text
+
+    def test_apply_editor_colors_no_changes(self, editor):
+        """apply_editor_colors with empty values should not change palette."""
+        palette = editor.palette()
+        original_base = palette.color(palette.ColorRole.Base).name()
+        original_text = palette.color(palette.ColorRole.Text).name()
+
+        editor.apply_editor_colors("", "")
+
+        updated = editor.palette()
+        assert updated.color(updated.ColorRole.Base).name() == original_base
+        assert updated.color(updated.ColorRole.Text).name() == original_text
+
+    def test_apply_editor_colors_foreground_only(self, editor):
+        """apply_editor_colors should handle foreground-only updates."""
+        palette = editor.palette()
+        original_base = palette.color(palette.ColorRole.Base).name()
+
+        editor.apply_editor_colors("", "#ddeeff")
+
+        updated = editor.palette()
+        assert updated.color(updated.ColorRole.Base).name() == original_base
+        assert updated.color(updated.ColorRole.Text).name() == "#ddeeff"
+
+    def test_set_line_number_colors_partial_updates(self, editor):
+        """set_line_number_colors should handle partial updates."""
+        original_fg = editor._line_number_fg.name()
+
+        editor.set_line_number_colors("#010203", "")
+        assert editor._line_number_bg.name() == "#010203"
+        assert editor._line_number_fg.name() == original_fg
+
+        editor.set_line_number_colors("", "#040506")
+        assert editor._line_number_fg.name() == "#040506"
+
+    def test_set_line_number_colors_no_changes(self, editor):
+        """set_line_number_colors with empty inputs should not change colors."""
+        original_bg = editor._line_number_bg.name()
+        original_fg = editor._line_number_fg.name()
+
+        editor.set_line_number_colors("", "")
+
+        assert editor._line_number_bg.name() == original_bg
+        assert editor._line_number_fg.name() == original_fg
+
+    # ── Line 315: apply_font with invalid size ──────────────────────
+
+    def test_apply_font_invalid_size_no_change(self, editor):
+        """apply_font with size <= 0 should not change the font."""
+        original_font = editor.font().family()
+        original_size = editor.font().pointSize()
+
+        editor.apply_font("Courier", 0)
+
+        assert editor.font().family() == original_font
+        assert editor.font().pointSize() == original_size
+
+    def test_apply_font_empty_family_no_change(self, editor):
+        """apply_font with empty family should not change the font."""
+        original_font = editor.font().family()
+        original_size = editor.font().pointSize()
+
+        editor.apply_font("", 12)
+
+        assert editor.font().family() == original_font
+        assert editor.font().pointSize() == original_size
+
+    # ── Line 26: LineNumberArea.paintEvent delegation ───────────────
+
+    def test_line_number_area_paint_event_delegation(self, editor):
+        """LineNumberArea.paintEvent delegates to editor.line_number_area_paint_event."""
+        from PyQt6.QtGui import QPaintEvent
+        from PyQt6.QtCore import QRect
+        from unittest.mock import patch
+
+        editor.setPlainText("line1\nline2")
+        editor.show()
+
+        rect = QRect(0, 0, editor.line_number_area.width(), editor.height())
+        event = QPaintEvent(rect)
+
+        with patch.object(editor, "line_number_area_paint_event") as mock_paint:
+            editor.line_number_area.paintEvent(event)
+            mock_paint.assert_called_once_with(event)
+
+    # ── Line 99: _update_line_number_area scroll branch ─────────────
+
+    def test_update_line_number_area_scroll_branch(self, editor):
+        """When dy != 0, the line_number_area should be scrolled."""
+        from PyQt6.QtCore import QRect
+        from unittest.mock import patch
+
+        editor.setPlainText("\n".join(["line"] * 100))
+        editor.show()
+
+        with patch.object(editor.line_number_area, "scroll") as mock_scroll:
+            editor._update_line_number_area(QRect(0, 0, 100, 100), 10)
+            mock_scroll.assert_called_once_with(0, 10)
+
+    # ── Lines 151-152: keyPressEvent during undo/redo ───────────────
+
+    def test_key_press_during_undo_redo_passes_through(self, editor):
+        """When _is_applying_undo_redo is True, keyPressEvent delegates to super."""
+        from PyQt6.QtCore import Qt
+
+        editor.setPlainText("abc")
+        editor._is_applying_undo_redo = True
+
+        try:
+            # This should pass through to super without creating undo commands
+            stack_count_before = editor.undo_stack.count()
+            self._type_char(editor, "x")
+            stack_count_after = editor.undo_stack.count()
+
+            assert stack_count_after == stack_count_before, \
+                "No undo command should be pushed during undo/redo application"
+            assert "x" in editor.toPlainText()
+        finally:
+            editor._is_applying_undo_redo = False
+
+    def test_focus_out_flushes_empty_pending_insert(self, editor):
+        """focusOutEvent should be safe when no pending insert exists."""
+        from PyQt6.QtCore import QEvent
+        from PyQt6.QtGui import QFocusEvent
+
+        editor.setPlainText("")
+
+        focus_event = QFocusEvent(QEvent.Type.FocusOut)
+        editor.focusOutEvent(focus_event)
+
+        assert editor.toPlainText() == ""
+
+
+class TestReplaceTextCommandRedo:
+    """Tests for ReplaceTextCommand redo path (lines 94-98) and _set_cursor_position."""
+
+    def _type_char(self, editor, char):
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        key = getattr(Qt.Key, f"Key_{char.upper()}")
+        event = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier, char)
+        editor.keyPressEvent(event)
+
+    def _type_space(self, editor):
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier, " ")
+        editor.keyPressEvent(event)
+
+    def test_replace_text_undo_then_redo(self, editor):
+        """Replacing selected text, undoing, then redoing should hit ReplaceTextCommand.redo lines 94-98."""
+        # Type "abc " to create some text
+        for char in "abc":
+            self._type_char(editor, char)
+        self._type_space(editor)
+
+        assert editor.toPlainText() == "abc "
+
+        # Select "b" (position 1-2) and replace with "X"
+        cursor = editor.textCursor()
+        cursor.setPosition(1)
+        cursor.setPosition(2, cursor.MoveMode.KeepAnchor)
+        editor.setTextCursor(cursor)
+        self._type_char(editor, "x")
+
+        assert editor.toPlainText() == "axc "
+
+        # Undo -> should restore "abc "
+        editor.undo()
+        assert editor.toPlainText() == "abc "
+
+        # Redo -> should re-apply the replacement (hits lines 94-98)
+        editor.redo()
+        assert editor.toPlainText() == "axc "
+
+    def test_set_cursor_position_via_undo_redo(self, editor):
+        """_set_cursor_position is used during undo/redo; verify cursor lands correctly."""
+        for char in "hello":
+            self._type_char(editor, char)
+        self._type_space(editor)
+
+        # Select "ell" (positions 1-4) and replace with "X"
+        cursor = editor.textCursor()
+        cursor.setPosition(1)
+        cursor.setPosition(4, cursor.MoveMode.KeepAnchor)
+        editor.setTextCursor(cursor)
+        self._type_char(editor, "x")
+
+        assert editor.toPlainText() == "hxo "
+
+        # Undo
+        editor.undo()
+        assert editor.toPlainText() == "hello "
+
+        # Redo
+        editor.redo()
+        assert editor.toPlainText() == "hxo "
+        # Cursor should be after the replacement
+        assert editor.textCursor().position() == 2
+
+class TestUndoCommandsCoverage:
+    """Direct tests for undo command helpers and UTF-16 handling."""
+
+    def test_utf16_len_handles_surrogate_pair(self):
+        from editor.undo_commands import _utf16_len
+
+        assert _utf16_len("A") == 1
+        assert _utf16_len("\U0001F600") == 2
+
+    def test_insert_text_command_manual_redo(self, editor):
+        from editor.undo_commands import InsertTextCommand
+
+        cursor = editor.textCursor()
+        cursor.insertText("hi")
+        editor.setTextCursor(cursor)
+
+        cmd = InsertTextCommand(editor, "hi", 0)
+        cmd.redo()
+        assert editor.toPlainText() == "hi"
+
+        cmd.redo()
+        assert editor.toPlainText() == "hihi"
+
+    def test_text_edit_command_set_cursor_position(self, editor):
+        from editor.undo_commands import TextEditCommand
+
+        cmd = TextEditCommand(editor)
+        cmd._set_cursor_position(0)
+        assert editor.textCursor().position() == 0

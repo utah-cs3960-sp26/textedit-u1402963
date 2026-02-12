@@ -180,6 +180,25 @@ class TestFileTreeWidget:
         selected_path = file_tree.get_selected_path()
         assert selected_path == file_path
 
+    def test_directory_changed_signal_with_root(self, file_tree, temp_folder):
+        """directory_changed should emit root path when set."""
+        received = []
+        file_tree.directory_changed.connect(received.append)
+
+        file_tree._on_directory_changed(temp_folder)
+
+        assert received == [temp_folder]
+
+    def test_directory_changed_signal_without_root(self, app):
+        """directory_changed should not emit when no root is set."""
+        tree = FileTreeWidget()
+        received = []
+        tree.directory_changed.connect(received.append)
+
+        tree._on_directory_changed("ignored")
+
+        assert received == []
+
 
 class TestFileTreeContextMenu:
     """Tests for context menu actions."""
@@ -415,3 +434,199 @@ class TestFileTreeWithProxyModel:
         
         assert "file1.txt" in visible_names
         assert "file2.py" in visible_names
+
+
+class TestPromptNewFile:
+    """Tests for _prompt_new_file which shows QInputDialog."""
+
+    def test_creates_file_on_ok(self, file_tree, temp_folder):
+        """When user enters a name and clicks OK, file is created."""
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("new_test.txt", True)):
+            file_tree._prompt_new_file(temp_folder)
+
+        assert os.path.exists(os.path.join(temp_folder, "new_test.txt"))
+
+    def test_cancelled_does_nothing(self, file_tree, temp_folder):
+        """When user cancels the dialog, no file is created."""
+        before = set(os.listdir(temp_folder))
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("cancelled.txt", False)):
+            file_tree._prompt_new_file(temp_folder)
+
+        assert set(os.listdir(temp_folder)) == before
+
+    def test_empty_name_does_nothing(self, file_tree, temp_folder):
+        """When user clicks OK but name is empty, no file is created."""
+        before = set(os.listdir(temp_folder))
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("", True)):
+            file_tree._prompt_new_file(temp_folder)
+
+        assert set(os.listdir(temp_folder)) == before
+
+
+class TestPromptNewFolder:
+    """Tests for _prompt_new_folder which shows QInputDialog."""
+
+    def test_creates_folder_on_ok(self, file_tree, temp_folder):
+        """When user enters a name and clicks OK, folder is created."""
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("new_dir", True)):
+            file_tree._prompt_new_folder(temp_folder)
+
+        created = os.path.join(temp_folder, "new_dir")
+        assert os.path.isdir(created)
+
+    def test_cancelled_does_nothing(self, file_tree, temp_folder):
+        """When user cancels, no folder is created."""
+        before = set(os.listdir(temp_folder))
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("nope", False)):
+            file_tree._prompt_new_folder(temp_folder)
+
+        assert set(os.listdir(temp_folder)) == before
+
+    def test_empty_name_does_nothing(self, file_tree, temp_folder):
+        """When user clicks OK but name is empty, no folder is created."""
+        before = set(os.listdir(temp_folder))
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("", True)):
+            file_tree._prompt_new_folder(temp_folder)
+
+        assert set(os.listdir(temp_folder)) == before
+
+
+class TestPromptRename:
+    """Tests for _prompt_rename which shows QInputDialog."""
+
+    def test_renames_file_on_ok(self, file_tree, temp_folder):
+        """When user enters a new name and clicks OK, item is renamed."""
+        old_path = os.path.join(temp_folder, "file1.txt")
+        assert os.path.exists(old_path)
+
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("renamed.txt", True)):
+            file_tree._prompt_rename(old_path)
+
+        assert os.path.exists(os.path.join(temp_folder, "renamed.txt"))
+        assert not os.path.exists(old_path)
+
+    def test_cancelled_does_nothing(self, file_tree, temp_folder):
+        """When user cancels, file keeps its original name."""
+        old_path = os.path.join(temp_folder, "file2.py")
+        assert os.path.exists(old_path)
+
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("nope.py", False)):
+            file_tree._prompt_rename(old_path)
+
+        assert os.path.exists(old_path)
+
+    def test_same_name_does_nothing(self, file_tree, temp_folder):
+        """When user clicks OK but enters the same name, no rename occurs."""
+        old_path = os.path.join(temp_folder, "file2.py")
+        assert os.path.exists(old_path)
+
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("file2.py", True)):
+            file_tree._prompt_rename(old_path)
+
+        assert os.path.exists(old_path)
+
+    def test_empty_name_does_nothing(self, file_tree, temp_folder):
+        """When user clicks OK but name is empty, no rename occurs."""
+        old_path = os.path.join(temp_folder, "file2.py")
+        assert os.path.exists(old_path)
+
+        with patch("editor.file_tree.QInputDialog.getText",
+                   return_value=("", True)):
+            file_tree._prompt_rename(old_path)
+
+        assert os.path.exists(old_path)
+
+
+class TestPromptDelete:
+    """Tests for _prompt_delete which shows QMessageBox."""
+
+    def test_yes_deletes_file(self, file_tree, temp_folder):
+        """When user confirms deletion, file is removed."""
+        target = os.path.join(temp_folder, "file2.py")
+        assert os.path.exists(target)
+
+        with patch("editor.file_tree.QMessageBox.question") as mock_q:
+            from PyQt6.QtWidgets import QMessageBox
+            mock_q.return_value = QMessageBox.StandardButton.Yes
+            file_tree._prompt_delete(target)
+
+        assert not os.path.exists(target)
+
+    def test_no_keeps_file(self, file_tree, temp_folder):
+        """When user declines deletion, file is preserved."""
+        target = os.path.join(temp_folder, "file1.txt")
+        assert os.path.exists(target)
+
+        with patch("editor.file_tree.QMessageBox.question") as mock_q:
+            from PyQt6.QtWidgets import QMessageBox
+            mock_q.return_value = QMessageBox.StandardButton.No
+            file_tree._prompt_delete(target)
+
+        assert os.path.exists(target)
+
+    def test_yes_deletes_folder(self, file_tree, temp_folder):
+        """When user confirms deletion of a folder, folder is removed."""
+        target = os.path.join(temp_folder, "subfolder")
+        assert os.path.isdir(target)
+
+        with patch("editor.file_tree.QMessageBox.question") as mock_q:
+            from PyQt6.QtWidgets import QMessageBox
+            mock_q.return_value = QMessageBox.StandardButton.Yes
+            file_tree._prompt_delete(target)
+
+        assert not os.path.exists(target)
+
+
+class TestSidebarFocusSearch:
+    def test_focus_search_with_root(self, sidebar, temp_folder):
+        """focus_search should focus the search input when root is set."""
+        sidebar.focus_search()
+        assert sidebar.search_input.hasFocus()
+    
+    def test_focus_search_without_root(self, app):
+        """focus_search should do nothing when no root folder is set."""
+        sidebar = SidebarWidget()
+        sidebar.focus_search()
+        # Should not crash, search should not have focus
+        assert not sidebar.search_input.hasFocus()
+
+
+class TestContextMenu:
+    def test_context_menu_is_built(self, file_tree, temp_folder):
+        """_show_context_menu should create a menu without crashing."""
+        from PyQt6.QtCore import QPoint
+        with patch("editor.file_tree.QMenu.exec"):
+            file_tree._show_context_menu(QPoint(0, 0))
+
+    def test_context_menu_on_valid_item(self, file_tree, temp_folder):
+        """Context menu on a valid item should enable all actions."""
+        from PyQt6.QtCore import QPoint
+        with patch("editor.file_tree.QMenu.exec"):
+            # Click at center of widget where items exist
+            file_tree._show_context_menu(QPoint(50, 50))
+
+    def test_context_menu_on_invalid_item_disables_actions(self, file_tree):
+        """Context menu on invalid item should disable rename/delete."""
+        from PyQt6.QtCore import QPoint, QModelIndex
+        with patch("editor.file_tree.QMenu.exec"), \
+             patch("editor.file_tree.QAction.setEnabled") as mock_set_enabled, \
+             patch.object(file_tree, "indexAt", return_value=QModelIndex()):
+            file_tree._show_context_menu(QPoint(0, 0))
+
+        assert mock_set_enabled.call_count >= 2
+
+
+class TestFileTreeNoRoot:
+    def test_get_root_folder_none(self, app):
+        """get_root_folder returns None when no root set."""
+        tree = FileTreeWidget()
+        assert tree.get_root_folder() is None

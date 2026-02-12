@@ -196,11 +196,7 @@ class HtmlTokenizer(BaseTokenizer):
                 stack = self._pop_state(stack)
                 tag_start = pos
                 pos += end_tag_len
-                match = self.TAG_NAME_RE.match(line, tag_start + 2)
-                if match:
-                    tokens.append(self._make_token(tag_start, pos - tag_start, StyleId.TAG))
-                else:
-                    tokens.append(self._make_token(tag_start, pos - tag_start, StyleId.TAG))
+                tokens.append(self._make_token(tag_start, pos - tag_start, StyleId.TAG))
                 stack = self._update_sub_state(stack, self.STATE_IN_TAG)
                 return pos, stack
             pos += 1

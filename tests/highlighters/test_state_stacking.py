@@ -188,3 +188,15 @@ class TestPythonMultilineStrings:
         top_frame = result.final_stack[-1]
         assert top_frame.lang_id == "python"
         assert top_frame.sub_state == 1, "Should be STATE_TRIPLE_SINGLE (1)"
+
+
+class TestPythonTokenizerOperators:
+    @pytest.fixture
+    def tokenizer(self):
+        return PythonTokenizer()
+
+    def test_python_operator_fallback_single_char(self, tokenizer):
+        """Single-char operators should be tokenized in the fallback branch."""
+        result = tokenizer.tokenize_line("a + b", ())
+        op_tokens = [t for t in result.tokens if t.style_id == StyleId.OPERATOR]
+        assert any("+" in "a + b"[t.start:t.start + t.length] for t in op_tokens)
