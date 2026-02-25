@@ -404,12 +404,18 @@ class MainWindow(QMainWindow):
             elif result == "cancel":
                 return
 
+        app = QApplication.instance()
+        was_tracking = getattr(app, '_tracking', False)
+        if was_tracking:
+            app.set_tracking(False)
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open File",
             "",
             "All Files (*);;Python (*.py);;C/C++ (*.c *.cpp *.h *.hpp);;Java (*.java);;HTML (*.html *.htm);;JSON (*.json);;Markdown (*.md);;Text (*.txt)",
         )
+        if was_tracking:
+            app.set_tracking(True)
         if not file_path:
             return
 
@@ -423,7 +429,13 @@ class MainWindow(QMainWindow):
 
     def open_folder(self):
         """Open folder dialog and set sidebar root."""
+        app = QApplication.instance()
+        was_tracking = getattr(app, '_tracking', False)
+        if was_tracking:
+            app.set_tracking(False)
         folder = QFileDialog.getExistingDirectory(self, "Open Folder")
+        if was_tracking:
+            app.set_tracking(True)
         if folder:
             self.sidebar.set_root_folder(folder)
 
@@ -470,6 +482,10 @@ class MainWindow(QMainWindow):
         if self._document.file_path:
             start_dir = os.path.dirname(self._document.file_path)
 
+        app = QApplication.instance()
+        was_tracking = getattr(app, '_tracking', False)
+        if was_tracking:
+            app.set_tracking(False)
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save File As",
@@ -477,6 +493,8 @@ class MainWindow(QMainWindow):
             all_filters,
             suggested_filter,
         )
+        if was_tracking:
+            app.set_tracking(True)
         if not file_path:
             return
 
