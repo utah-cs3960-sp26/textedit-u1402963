@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .coverage
+s-m-l-files/large.txt
+s-m-l-files/medium.txt
+s-m-l-files/small.txt

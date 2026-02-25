@@ -1,6 +1,7 @@
 import os
 
 from PyQt6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QFileDialog,
     QMessageBox,
@@ -20,6 +21,7 @@ from PyQt6.QtGui import QAction, QCloseEvent, QShortcut, QKeySequence, QPalette
 from PyQt6.QtCore import Qt, QSettings
 
 from editor.sidebar import SidebarWidget
+from editor.frame_timer import FrameTimerWidget
 
 from editor.highlighters.detector import LanguageDetector
 from editor.code_editor import CodeEditor
@@ -100,7 +102,23 @@ class MainWindow(QMainWindow):
         self._search_shortcut = QShortcut(QKeySequence(), self)
         self._search_shortcut.activated.connect(self._focus_file_search)
         self._shortcuts["view_search_files"] = self._search_shortcut
+
+        self._frame_timer_shortcut = QShortcut(QKeySequence("Ctrl+P"), self)
+        self._frame_timer_shortcut.activated.connect(self._toggle_frame_timer)
     
+    def _toggle_frame_timer(self):
+        showing = not self._frame_timer_action.isVisible()
+        self._frame_timer_action.setVisible(showing)
+        app = QApplication.instance()
+        if showing:
+            self._frame_timer._reset()
+            if hasattr(app, 'set_tracking'):
+                app.set_tracking(True)
+        else:
+            if hasattr(app, 'set_tracking'):
+                app.set_tracking(False)
+            self._frame_timer._reset()
+
     def _toggle_sidebar(self):
         is_visible = self.sidebar.isVisible()
         self.sidebar.setVisible(not is_visible)
@@ -232,9 +250,12 @@ class MainWindow(QMainWindow):
         right_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(right_spacer)
 
-        right_balance = QWidget()
-        right_balance.setFixedWidth(28)
-        toolbar.addWidget(right_balance)
+        self._frame_timer = FrameTimerWidget()
+        self._frame_timer_action = toolbar.addWidget(self._frame_timer)
+        self._frame_timer_action.setVisible(False)
+        app = QApplication.instance()
+        if hasattr(app, 'set_frame_timer'):
+            app.set_frame_timer(self._frame_timer)
 
     def _init_settings(self):
         self._settings_store = QSettings("FART", "Text Editor 9000")
