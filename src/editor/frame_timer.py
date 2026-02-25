@@ -44,6 +44,8 @@ class FrameTimerApp(QApplication):
 class FrameTimerWidget(QLabel):
     """Displays last / average / max frame times and derived FPS."""
 
+    DISPLAY_INTERVAL = 0.25  # seconds between display updates (4 Hz)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._recording = False
@@ -51,6 +53,7 @@ class FrameTimerWidget(QLabel):
         self._max_ms = 0.0
         self._total_ms = 0.0
         self._frame_count = 0
+        self._last_display_time = 0.0
 
         font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         font.setPointSize(9)
@@ -68,7 +71,10 @@ class FrameTimerWidget(QLabel):
             self._max_ms = duration_ms
         self._total_ms += duration_ms
         self._frame_count += 1
-        self._update_display()
+        now = time.perf_counter()
+        if now - self._last_display_time >= self.DISPLAY_INTERVAL:
+            self._update_display()
+            self._last_display_time = now
         self._recording = False
 
     def _update_display(self):
@@ -89,4 +95,5 @@ class FrameTimerWidget(QLabel):
         self._max_ms = 0.0
         self._total_ms = 0.0
         self._frame_count = 0
+        self._last_display_time = 0.0
         self._update_display()
