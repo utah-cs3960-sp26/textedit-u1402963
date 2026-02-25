@@ -22,6 +22,7 @@ from PyQt6.QtCore import Qt, QSettings
 
 from editor.sidebar import SidebarWidget
 from editor.frame_timer import FrameTimerWidget
+from editor.find_replace import FindReplaceBar
 
 from editor.highlighters.detector import LanguageDetector
 from editor.code_editor import CodeEditor
@@ -86,13 +87,23 @@ class MainWindow(QMainWindow):
         return self._document.original_content
 
     def _setup_central_widget(self):
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.sidebar = SidebarWidget()
         splitter.addWidget(self.sidebar)
         self.text_edit = CodeEditor()
         splitter.addWidget(self.text_edit)
         splitter.setSizes([250, 550])
-        self.setCentralWidget(splitter)
+        container_layout.addWidget(splitter, 1)
+
+        self._find_replace_bar = FindReplaceBar(self.text_edit, self)
+        container_layout.addWidget(self._find_replace_bar)
+
+        self.setCentralWidget(container)
 
     def _setup_shortcuts(self):
         self._sidebar_shortcut = QShortcut(QKeySequence(), self)
@@ -208,6 +219,18 @@ class MainWindow(QMainWindow):
         select_all_action.triggered.connect(self.text_edit.selectAll)
         edit_menu.addAction(select_all_action)
         self._actions["edit_select_all"] = select_all_action
+
+        edit_menu.addSeparator()
+
+        find_action = QAction("&Find...", self)
+        find_action.triggered.connect(lambda: self._find_replace_bar.show_bar())
+        edit_menu.addAction(find_action)
+        self._actions["edit_find"] = find_action
+
+        replace_action = QAction("Find and &Replace...", self)
+        replace_action.triggered.connect(lambda: self._find_replace_bar.show_bar())
+        edit_menu.addAction(replace_action)
+        self._actions["edit_replace"] = replace_action
 
         settings_menu = menu_bar.addMenu("&Settings")
         preferences_action = QAction("&Preferences...", self)
