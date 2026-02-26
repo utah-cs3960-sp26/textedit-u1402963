@@ -20,3 +20,6 @@
 ### The maximum frame time if you try to replace "while" with "for". There should be 19 matches in small.txt, 1 186 in medium.txt, and 668 753 in large.txt
 
 ### The total memory used by your text editor process, which you can measure using "Task Manager" or "Activity Monitor" or your system's equivalent. Specifically look for a "Physical" or "Real" memory measure, not "Virtual". For the largest file it should be 1-3GiB.
+
+
+Use nmap to "load the file" without loading it, only loads the file when you look at it
