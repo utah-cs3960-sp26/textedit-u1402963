@@ -20,6 +20,11 @@ python -m pytest
 python --cov=src pytest
 ```
 
+### Run GUI Timing Tests
+```bash
+python benchmarks/run.py
+```
+
 ## Code Style & Conventions
 
 - **Language:** Python 3.10+
