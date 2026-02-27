@@ -41,9 +41,41 @@ class TestGuiTimingScroll:
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
 
-    def test_gui_timing_scroll_large(self, window, qapp, run_direct, large_content, require_small_medium_pass):
-        passed = self._run_scroll(
-            window, qapp, run_direct, large_content,
-            "Scroll large.txt (30 pages down + 30 up)",
+    def test_gui_timing_scroll_large(self, window, qapp, run_direct, large_file_path, require_small_medium_pass):
+        from editor.models.virtual_document import VirtualDocument
+
+        shared_vdoc = VirtualDocument(large_file_path)
+
+        window._vdoc = shared_vdoc
+        window._document.file_path = large_file_path
+        window._document.set_content("", mark_as_saved=True)
+        window.text_edit.enter_virtual_mode(shared_vdoc, window._virtual_scrollbar)
+        window._setup_highlighter(large_file_path, "")
+        if window.highlighter:
+            window.highlighter.set_batch_limit(100)
+        qapp.processEvents()
+
+        def setup():
+            cursor = window.text_edit.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+            window.text_edit.setTextCursor(cursor)
+
+        def scroll():
+            for _ in range(SCROLL_STEPS):
+                QTest.keyClick(window.text_edit, Qt.Key.Key_PageDown)
+                qapp.processEvents()
+            for _ in range(SCROLL_STEPS):
+                QTest.keyClick(window.text_edit, Qt.Key.Key_PageUp)
+                qapp.processEvents()
+
+        passed = run_direct(
+            "Scroll large.txt (30 pages down + 30 up) [virtual mode]",
+            scroll, setup=setup,
         )
+
+        if window.text_edit.virtual_mode:
+            window.text_edit.exit_virtual_mode()
+        window._vdoc = None
+        shared_vdoc.close()
+
         assert passed, "Avg P95 frame time exceeds 60 fps target"

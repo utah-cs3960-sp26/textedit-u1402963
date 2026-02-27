@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QPlainTextEdit, QWidget
-from PyQt6.QtCore import Qt, QRect, QSize
+from PyQt6.QtWidgets import QPlainTextEdit, QWidget, QScrollBar
+from PyQt6.QtCore import Qt, QRect, QSize, QTimer
 from PyQt6.QtGui import (
     QColor,
     QPainter,
@@ -9,6 +9,7 @@ from PyQt6.QtGui import (
     QFont,
     QFontMetrics,
     QFontDatabase,
+    QTextCursor,
 )
 
 from editor.undo_commands import InsertTextCommand, DeleteTextCommand, ReplaceTextCommand
@@ -33,6 +34,8 @@ class CodeEditor(QPlainTextEdit):
     DEFAULT_LINE_NUMBER_FG = QColor(Qt.GlobalColor.darkGray)
     LINE_NUMBER_FONT_SIZE = 10
 
+    CHUNK_SIZE = 1000  # lines per chunk in virtual mode
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -41,6 +44,7 @@ class CodeEditor(QPlainTextEdit):
         self._undo_stack = QUndoStack(self)
         self._undo_stack.setUndoLimit(self.MAX_UNDO_STEPS)
 
+        self._highlighter = None
         self._pending_insert_text = ""
         self._pending_insert_start = -1
         self._is_applying_undo_redo = False
@@ -53,6 +57,15 @@ class CodeEditor(QPlainTextEdit):
 
         self.document().setUndoRedoEnabled(False)
 
+        # Virtual mode state
+        self._virtual_mode = False
+        self._vdoc = None
+        self._chunk_start = 0
+        self._chunk_line_count = 0
+        self._virtual_scrollbar = None
+        self._loading_chunk = False
+        self._cached_ln_width = -1
+
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
 
@@ -61,6 +74,10 @@ class CodeEditor(QPlainTextEdit):
     @property
     def undo_stack(self) -> QUndoStack:
         return self._undo_stack
+
+    def set_highlighter(self, highlighter):
+        """Store reference to the syntax highlighter for bulk-op optimization."""
+        self._highlighter = highlighter
 
     def undo(self):
         if self._pending_insert_text:
@@ -83,25 +100,34 @@ class CodeEditor(QPlainTextEdit):
         return self._undo_stack.canRedo()
 
     def line_number_area_width(self):
+        if self._cached_ln_width >= 0:
+            return self._cached_ln_width
+        return self._compute_line_number_area_width()
+
+    def _compute_line_number_area_width(self):
         digits = 1
-        max_block = max(1, self.blockCount())
+        if self._virtual_mode and self._vdoc:
+            max_block = max(1, self._vdoc.line_count)
+        else:
+            max_block = max(1, self.blockCount())
         while max_block >= 10:
             max_block //= 10
             digits += 1
         metrics = QFontMetrics(self._line_number_font)
         space = 3 + metrics.horizontalAdvance("9") * digits + 3
+        self._cached_ln_width = space
         return space
 
     def _update_line_number_area_width(self, _):
+        self._cached_ln_width = -1
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
 
     def _update_line_number_area(self, rect, dy):
         if dy:
             self.line_number_area.scroll(0, dy)
         else:
-            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
-        if rect.contains(self.viewport().rect()):
-            self._update_line_number_area_width(0)
+            w = self.line_number_area.width()
+            self.line_number_area.update(0, rect.y(), w, rect.height())
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -114,29 +140,34 @@ class CodeEditor(QPlainTextEdit):
         painter = QPainter(self.line_number_area)
         painter.fillRect(event.rect(), self._line_number_bg)
         painter.setFont(self._line_number_font)
+        painter.setPen(self._line_number_fg)
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
-        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
-        bottom = top + int(self.blockBoundingRect(block).height())
+        offset = self.contentOffset()
+        top = int(self.blockBoundingGeometry(block).translated(offset).top())
+        block_height = int(self.blockBoundingRect(block).height())
+        bottom = top + block_height
 
-        while block.isValid() and top <= event.rect().bottom():
-            if block.isVisible() and bottom >= event.rect().top():
-                number = str(block_number + 1)
-                painter.setPen(self._line_number_fg)
+        # In virtual mode, offset line numbers by chunk start
+        line_offset = self._chunk_start if self._virtual_mode else 0
+        event_top = event.rect().top()
+        event_bottom = event.rect().bottom()
+        ln_width = self.line_number_area.width() - 3
+        align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+
+        while block.isValid() and top <= event_bottom:
+            if block.isVisible() and bottom >= event_top:
                 painter.drawText(
-                    0,
-                    top,
-                    self.line_number_area.width() - 3,
-                    int(self.blockBoundingRect(block).height()),
-                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                    number,
+                    0, top, ln_width, block_height, align,
+                    str(block_number + line_offset + 1),
                 )
             block = block.next()
             if not block.isValid():
                 break
             top = bottom
-            bottom = top + int(self.blockBoundingRect(block).height())
+            block_height = int(self.blockBoundingRect(block).height())
+            bottom = top + block_height
             block_number += 1
 
     def _flush_pending_insert(self):
@@ -267,10 +298,78 @@ class CodeEditor(QPlainTextEdit):
         self._undo_stack.clear()
         super().clear()
 
+    _LOAD_CHUNK_SIZE = 500
+
     def setPlainText(self, text: str):
         self._flush_pending_insert()
         self._undo_stack.clear()
-        super().setPlainText(text)
+        # Cancel any pending deferred loading from a previous call
+        self._deferred_lines = None
+
+        # Detach highlighter to prevent per-block highlighting overhead
+        hl = self._highlighter
+        if hl:
+            hl.setDocument(None)
+
+        lines = text.split('\n')
+        if len(lines) <= self._LOAD_CHUNK_SIZE:
+            super().setPlainText(text)
+            self._cached_ln_width = -1
+            self._update_line_number_area_width(0)
+            # Reattach highlighter without triggering full rehighlight
+            if hl:
+                hl._suppress_rehighlight = True
+                hl.setDocument(self.document())
+                hl._suppress_rehighlight = False
+        else:
+            # Suppress updates and signals during multi-chunk loading;
+            # updates re-enabled in _load_next_chunk after all chunks done.
+            self.setUpdatesEnabled(False)
+            self.blockSignals(True)
+            first_chunk = '\n'.join(lines[:self._LOAD_CHUNK_SIZE])
+            super().setPlainText(first_chunk)
+            self.blockSignals(False)
+            self._cached_ln_width = -1
+            self._update_line_number_area_width(0)
+            # Queue remaining chunks — highlighter stays detached until done
+            self._deferred_lines = lines
+            self._deferred_offset = self._LOAD_CHUNK_SIZE
+            self._deferred_hl = hl
+            QTimer.singleShot(0, self._load_next_chunk)
+
+    def _load_next_chunk(self):
+        """Append next chunk of lines to the document (deferred)."""
+        if not hasattr(self, '_deferred_lines') or self._deferred_lines is None:
+            return
+        lines = self._deferred_lines
+        end = min(self._deferred_offset + self._LOAD_CHUNK_SIZE, len(lines))
+        chunk = '\n'.join(lines[self._deferred_offset:end])
+
+        self.blockSignals(True)
+        cursor = QTextCursor(self.document())
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText('\n' + chunk)
+        self.blockSignals(False)
+
+        self._deferred_offset = end
+        if self._deferred_offset < len(lines):
+            QTimer.singleShot(0, self._load_next_chunk)
+        else:
+            self._deferred_lines = None
+            self._cached_ln_width = -1
+            self._update_line_number_area_width(0)
+            # Reattach highlighter with cascade prevention: batch_limit
+            # caps highlightBlock calls so the first paint doesn't cascade
+            # through all blocks (which would take 300-600ms for 8K+ lines).
+            hl = getattr(self, '_deferred_hl', None)
+            if hl:
+                hl.set_batch_limit(100)
+                hl._suppress_rehighlight = True
+                hl.setDocument(self.document())
+                hl._suppress_rehighlight = False
+                self._deferred_hl = None
+            # Re-enable widget updates (disabled in setPlainText)
+            self.setUpdatesEnabled(True)
 
     def cut(self):
         """Cut selected text with undo support."""
@@ -337,3 +436,159 @@ class CodeEditor(QPlainTextEdit):
         if foreground:
             self._line_number_fg = QColor(foreground)
         self.line_number_area.update()
+
+    # ── Virtual mode (large file support) ───────────────────────────
+
+    @property
+    def virtual_mode(self):
+        return self._virtual_mode
+
+    @property
+    def vdoc(self):
+        return self._vdoc
+
+    def enter_virtual_mode(self, vdoc, scrollbar: QScrollBar):
+        """Switch to virtual mode backed by a VirtualDocument."""
+        self._vdoc = vdoc
+        self._virtual_mode = True
+        self._virtual_scrollbar = scrollbar
+        self._chunk_start = 0
+        self._chunk_line_count = 0
+
+        # Hide native vertical scrollbar; we use the external one
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        # Configure the external scrollbar
+        scrollbar.setRange(0, max(0, vdoc.line_count - 1))
+        scrollbar.setSingleStep(3)
+        scrollbar.setPageStep(self._visible_line_count())
+        scrollbar.setValue(0)
+        scrollbar.valueChanged.connect(self._on_virtual_scroll)
+        scrollbar.setVisible(True)
+
+        self._load_chunk(0)
+        self._update_line_number_area_width(0)
+
+    def exit_virtual_mode(self):
+        """Leave virtual mode and restore normal editor behavior."""
+        if not self._virtual_mode:
+            return
+        self._save_chunk_edits()
+        if self._virtual_scrollbar:
+            try:
+                self._virtual_scrollbar.valueChanged.disconnect(self._on_virtual_scroll)
+            except TypeError:
+                pass
+            self._virtual_scrollbar.setVisible(False)
+        self._virtual_mode = False
+        self._vdoc = None
+        self._chunk_start = 0
+        self._chunk_line_count = 0
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+    def _visible_line_count(self):
+        """Approximate number of visible lines in the viewport."""
+        if self.fontMetrics().height() <= 0:
+            return 40
+        return max(1, self.viewport().height() // self.fontMetrics().height())
+
+    def _load_chunk(self, target_line: int, local_line: int = 0):
+        """Load a chunk of lines centered around target_line into the editor."""
+        if not self._vdoc:
+            return
+
+        # Only save edits if a previous chunk was loaded
+        if self._chunk_line_count > 0:
+            self._save_chunk_edits()
+
+        half = self.CHUNK_SIZE // 2
+        start = max(0, target_line - half)
+        end = min(self._vdoc.line_count, start + self.CHUNK_SIZE)
+        start = max(0, end - self.CHUNK_SIZE)
+
+        self._chunk_start = start
+        self._chunk_line_count = end - start
+
+        text = self._vdoc.get_lines(start, self._chunk_line_count)
+
+        # Disable highlighter during bulk text replacement to avoid
+        # processing every block; re-enable with batch limit after.
+        hl = self._highlighter
+        if hl:
+            hl.set_enabled(False)
+
+        self._loading_chunk = True
+        self.blockSignals(True)
+        super().setPlainText(text)
+        self.blockSignals(False)
+        self._loading_chunk = False
+
+        if hl:
+            hl.set_batch_limit(100)
+            hl._batch_count = 0
+            hl.set_enabled(True)
+
+        self._undo_stack.clear()
+
+        # Scroll to the desired local line within the chunk
+        target_local = max(0, min(local_line, self._chunk_line_count - 1))
+        block = self.document().findBlockByNumber(target_local)
+        if block.isValid():
+            cursor = QTextCursor(block)
+            self.setTextCursor(cursor)
+            self.centerCursor()
+
+        self._update_line_number_area_width(0)
+        self.line_number_area.update()
+
+    def _save_chunk_edits(self):
+        """Save any edits in the current chunk back to VirtualDocument."""
+        if not self._virtual_mode or not self._vdoc:
+            return
+        current_text = self.toPlainText()
+        self._vdoc.set_lines_from_chunk(self._chunk_start, current_text)
+
+    def _on_virtual_scroll(self, value):
+        """Handle external scrollbar value changes."""
+        if self._loading_chunk:
+            return
+
+        # Check if the target line is within the current chunk with margin
+        margin = self.CHUNK_SIZE // 4
+        chunk_end = self._chunk_start + self._chunk_line_count
+        if self._chunk_start + margin <= value <= chunk_end - margin - self._visible_line_count():
+            # Still within chunk, just scroll internally
+            local_line = value - self._chunk_start
+            block = self.document().findBlockByNumber(local_line)
+            if block.isValid():
+                self.verticalScrollBar().setValue(
+                    int(self.blockBoundingGeometry(block).translated(
+                        self.contentOffset()).top())
+                )
+            return
+
+        # Need to load a new chunk
+        self._load_chunk(value, value - max(0, value - self.CHUNK_SIZE // 2))
+
+    def wheelEvent(self, event):
+        if self._virtual_mode and self._virtual_scrollbar:
+            delta = event.angleDelta().y()
+            lines = -(delta // 40) if delta != 0 else 0
+            new_val = self._virtual_scrollbar.value() + lines
+            self._virtual_scrollbar.setValue(
+                max(0, min(new_val, self._virtual_scrollbar.maximum()))
+            )
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+    def go_to_line_virtual(self, line_no: int):
+        """Jump to a specific global line number in virtual mode."""
+        if not self._virtual_mode or not self._vdoc:
+            return
+        line_no = max(0, min(line_no, self._vdoc.line_count - 1))
+        self._load_chunk(line_no, line_no - max(0, line_no - self.CHUNK_SIZE // 2))
+        if self._virtual_scrollbar:
+            self._virtual_scrollbar.blockSignals(True)
+            self._virtual_scrollbar.setValue(line_no)
+            self._virtual_scrollbar.blockSignals(False)

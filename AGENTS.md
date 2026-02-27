@@ -5,6 +5,8 @@ This is a cross-platform text editor built with PyQt6, inspired by Sublime Text.
 
 ## Commands
 
+Whenever agent context is approaching 90% handoff to a new thread and continue working on the task, also do this if a cyclical thought pattern is occuring
+
 ### Run the application
 ```bash
 python src/main.py

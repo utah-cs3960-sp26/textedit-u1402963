@@ -27,6 +27,7 @@ from editor.find_replace import FindReplaceBar
 from editor.highlighters.detector import LanguageDetector
 from editor.code_editor import CodeEditor
 from editor.models.document import DocumentModel
+from editor.models.virtual_document import VirtualDocument
 from editor.controllers.file_controller import FileController
 from editor.highlighters.core.style_registry import StyleRegistry
 from editor.preferences_dialog import PreferencesDialog
@@ -50,6 +51,7 @@ class MainWindow(QMainWindow):
         self.highlighter = None
         self._actions = {}
         self._shortcuts = {}
+        self._vdoc = None
 
         self._setup_central_widget()
         self._init_settings()
@@ -95,8 +97,20 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.sidebar = SidebarWidget()
         splitter.addWidget(self.sidebar)
+
+        # Editor + virtual scrollbar container
+        from PyQt6.QtWidgets import QScrollBar
+        editor_container = QWidget()
+        editor_layout = QHBoxLayout(editor_container)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(0)
         self.text_edit = CodeEditor()
-        splitter.addWidget(self.text_edit)
+        editor_layout.addWidget(self.text_edit)
+        self._virtual_scrollbar = QScrollBar(Qt.Orientation.Vertical)
+        self._virtual_scrollbar.setVisible(False)
+        editor_layout.addWidget(self._virtual_scrollbar)
+
+        splitter.addWidget(editor_container)
         splitter.setSizes([250, 550])
         container_layout.addWidget(splitter, 1)
 
@@ -147,6 +161,7 @@ class MainWindow(QMainWindow):
         self.highlighter = LanguageDetector.get_highlighter(
             self.text_edit.document(), file_path, content
         )
+        self.text_edit.set_highlighter(self.highlighter)
 
     def _setup_menu(self):
         menu_bar = self.menuBar()
@@ -393,6 +408,8 @@ class MainWindow(QMainWindow):
             elif result == "cancel":
                 return
 
+        self._close_virtual_doc()
+
         root_folder = self.sidebar.get_root_folder()
         if root_folder:
             name, ok = QInputDialog.getText(self, "New File", "File name:")
@@ -442,13 +459,59 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        success, content, error_msg = self._controller.open_file(file_path)
-        if success:
-            self.text_edit.setPlainText(content)
-            self._update_status()
-            self._setup_highlighter(file_path, content)
+        self._open_file_path(file_path)
+
+    def _open_file_path(self, file_path: str, highlight_in_tree: bool = False):
+        """Open a file, using virtual mode for large files."""
+        # Close any previous virtual document
+        self._close_virtual_doc()
+
+        if VirtualDocument.is_large_file(file_path):
+            self._open_large_file(file_path)
         else:
-            QMessageBox.critical(self, "Error", error_msg)
+            success, content, error_msg = self._controller.open_file(file_path)
+            if success:
+                self.text_edit.setPlainText(content)
+                self._update_status()
+                self._setup_highlighter(file_path, content)
+            else:
+                QMessageBox.critical(self, "Error", error_msg)
+                return
+
+        if highlight_in_tree:
+            self.sidebar.highlight_file(file_path)
+
+    def _open_large_file(self, file_path: str):
+        """Open a large file using mmap-backed virtual document."""
+        try:
+            self._vdoc = VirtualDocument(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open file: {e}")
+            return
+
+        self._document.file_path = file_path
+        self._document.set_content("", mark_as_saved=True)
+
+        self.text_edit.enter_virtual_mode(self._vdoc, self._virtual_scrollbar)
+        self._update_status()
+        # Defer highlighter setup so it doesn't share a frame with
+        # enter_virtual_mode (both together exceed 16.67ms budget).
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, lambda fp=file_path: self._finish_large_file_setup(fp))
+
+    def _finish_large_file_setup(self, file_path: str):
+        """Deferred highlighter setup after virtual mode load."""
+        chunk_text = self.text_edit.toPlainText()
+        self._setup_highlighter(file_path, chunk_text)
+        if self.highlighter:
+            self.highlighter.set_batch_limit(100)
+
+    def _close_virtual_doc(self):
+        """Clean up any active virtual document."""
+        if self._vdoc:
+            self.text_edit.exit_virtual_mode()
+            self._vdoc.close()
+            self._vdoc = None
 
     def open_folder(self):
         """Open folder dialog and set sidebar root."""
@@ -473,16 +536,13 @@ class MainWindow(QMainWindow):
             elif result == "cancel":
                 return
 
-        success, content, error_msg = self._controller.open_file(file_path)
-        if success:
-            self.text_edit.setPlainText(content)
-            self._update_status()
-            self._setup_highlighter(file_path, content)
-            self.sidebar.highlight_file(file_path)
-        else:
-            QMessageBox.critical(self, "Error", error_msg)
+        self._open_file_path(file_path, highlight_in_tree=True)
 
     def save_file(self):
+        if self._vdoc:
+            self._save_virtual_file()
+            return
+
         content = self.text_edit.toPlainText()
 
         if self._document.file_path:
@@ -495,6 +555,16 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", error_msg)
         else:
             self.save_file_as()
+
+    def _save_virtual_file(self):
+        """Save a file that's open in virtual mode."""
+        self.text_edit._save_chunk_edits()
+        try:
+            self._vdoc.save()
+            self._document.set_content("", mark_as_saved=True)
+            self._update_status()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not save file: {e}")
 
     def save_file_as(self):
         content = self.text_edit.toPlainText()

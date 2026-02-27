@@ -393,6 +393,11 @@ def large_content():
         return f.read()
 
 
+@pytest.fixture(scope="session")
+def large_file_path():
+    return _LARGE_FILE
+
+
 @pytest.fixture
 def measure_memory():
     """Returns a callable that measures current process RSS in MB."""

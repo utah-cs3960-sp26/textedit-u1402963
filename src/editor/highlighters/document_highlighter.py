@@ -27,6 +27,10 @@ class DocumentHighlighter(QSyntaxHighlighter):
         self._incremental_manager = IncrementalManager()
         self._lang_id = lang_id
         self._tokenizer = self._get_tokenizer(lang_id)
+        self._enabled = True
+        self._batch_limit = -1  # -1 = no limit (normal mode)
+        self._batch_count = 0
+        self._suppress_rehighlight = False
 
     def _get_tokenizer(self, lang_id: str) -> BaseTokenizer:
         """Get tokenizer for the given language, falling back to plain."""
@@ -48,12 +52,31 @@ class DocumentHighlighter(QSyntaxHighlighter):
         self._incremental_manager.clear()
         self.rehighlight()
 
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = enabled
+
+    def set_batch_limit(self, limit: int) -> None:
+        """Set max blocks to highlight per cascade. -1 = unlimited."""
+        self._batch_limit = limit
+        self._batch_count = 0
+
+    def rehighlight(self) -> None:
+        if self._suppress_rehighlight:
+            return
+        super().rehighlight()
+
     def highlightBlock(self, text: str) -> None:
         """Qt override: Highlight a single block of text.
 
         Args:
             text: The text content of the block to highlight.
         """
+        if not self._enabled:
+            return
+        if self._batch_limit >= 0:
+            if self._batch_count >= self._batch_limit:
+                return
+            self._batch_count += 1
         prev_state_id = self.previousBlockState()
         state_stack = self._stack_pool.get(prev_state_id)
 

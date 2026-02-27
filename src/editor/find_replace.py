@@ -128,10 +128,21 @@ class FindReplaceBar(QWidget):
             self._clear_highlights()
 
     def _find_all_matches(self):
-        """Return a list of (start, end) positions for all matches."""
+        """Return a list of (start, end) positions for all matches.
+
+        In virtual mode, returns (line_no, col, length) tuples from VirtualDocument.
+        In normal mode, returns (start, end) character-position tuples.
+        """
         pattern = self._get_pattern()
         if not pattern:
             return []
+
+        if self._editor.virtual_mode and self._editor.vdoc:
+            return self._editor.vdoc.find_all(
+                pattern,
+                case_sensitive=self._case_check.isChecked(),
+                use_regex=self._regex_check.isChecked(),
+            )
 
         text = self._editor.toPlainText()
         matches = []
@@ -175,18 +186,24 @@ class FindReplaceBar(QWidget):
             self._match_label.setStyleSheet("color: #CC0000;")
             self._clear_highlights()
         else:
-            cursor_pos = self._editor.textCursor().position()
-            self._current_match = 0
-            for i, (start, end) in enumerate(matches):
-                if start >= cursor_pos:
-                    self._current_match = i + 1
-                    break
+            if self._editor.virtual_mode:
+                self._current_match = 1
+                self._match_label.setText(f"{self._current_match} of {self._match_count}")
+                self._match_label.setStyleSheet("")
+                self._clear_highlights()
             else:
-                self._current_match = self._match_count
+                cursor_pos = self._editor.textCursor().position()
+                self._current_match = 0
+                for i, (start, end) in enumerate(matches):
+                    if start >= cursor_pos:
+                        self._current_match = i + 1
+                        break
+                else:
+                    self._current_match = self._match_count
 
-            self._match_label.setText(f"{self._current_match} of {self._match_count}")
-            self._match_label.setStyleSheet("")
-            self._highlight_matches(matches)
+                self._match_label.setText(f"{self._current_match} of {self._match_count}")
+                self._match_label.setStyleSheet("")
+                self._highlight_matches(matches)
 
     def _highlight_matches(self, matches):
         """Highlight all matches using extra selections (efficient for QPlainTextEdit)."""
@@ -221,6 +238,9 @@ class FindReplaceBar(QWidget):
         pattern = self._get_pattern()
         if not pattern:
             return False
+
+        if self._editor.virtual_mode and self._editor.vdoc:
+            return self._find_next_virtual(wrap, from_start)
 
         flags = self._build_find_flags()
         cursor = self._editor.textCursor()
@@ -258,6 +278,9 @@ class FindReplaceBar(QWidget):
         if not pattern:
             return False
 
+        if self._editor.virtual_mode and self._editor.vdoc:
+            return self._find_previous_virtual()
+
         flags = self._build_find_flags() | QTextDocument.FindFlag.FindBackward
 
         if self._regex_check.isChecked():
@@ -283,6 +306,93 @@ class FindReplaceBar(QWidget):
         if found:
             self._update_match_count()
         return found
+
+    # ── Virtual mode find helpers ───────────────────────────────────
+
+    def _find_next_virtual(self, wrap=True, from_start=False):
+        """Find next match in virtual mode using VirtualDocument."""
+        matches = self._find_all_matches()
+        if not matches:
+            return False
+
+        editor = self._editor
+        cursor = editor.textCursor()
+        # Current global line and column
+        if from_start:
+            cur_line, cur_col = 0, 0
+        else:
+            local_block = cursor.blockNumber()
+            cur_line = editor._chunk_start + local_block
+            cur_col = cursor.positionInBlock()
+            # Move past current selection
+            if cursor.hasSelection():
+                cur_col = cursor.positionInBlock()
+
+        # Find the next match after current position
+        for line_no, col, length in matches:
+            if (line_no, col) > (cur_line, cur_col):
+                self._jump_to_virtual_match(line_no, col, length)
+                self._update_match_count()
+                return True
+
+        # Wrap around
+        if wrap and matches:
+            line_no, col, length = matches[0]
+            self._jump_to_virtual_match(line_no, col, length)
+            self._update_match_count()
+            return True
+
+        return False
+
+    def _find_previous_virtual(self):
+        """Find previous match in virtual mode."""
+        matches = self._find_all_matches()
+        if not matches:
+            return False
+
+        editor = self._editor
+        cursor = editor.textCursor()
+        local_block = cursor.blockNumber()
+        cur_line = editor._chunk_start + local_block
+        cur_col = cursor.positionInBlock()
+
+        # Find the previous match before current position
+        for line_no, col, length in reversed(matches):
+            if (line_no, col) < (cur_line, cur_col):
+                self._jump_to_virtual_match(line_no, col, length)
+                self._update_match_count()
+                return True
+
+        # Wrap around to last match
+        if matches:
+            line_no, col, length = matches[-1]
+            self._jump_to_virtual_match(line_no, col, length)
+            self._update_match_count()
+            return True
+
+        return False
+
+    def _jump_to_virtual_match(self, line_no, col, length):
+        """Load the chunk containing the match and select it."""
+        editor = self._editor
+        editor.go_to_line_virtual(line_no)
+        # Now select the match within the loaded chunk
+        local_line = line_no - editor._chunk_start
+        block = editor.document().findBlockByNumber(local_line)
+        if block.isValid():
+            cursor = QTextCursor(block)
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Right,
+                QTextCursor.MoveMode.MoveAnchor,
+                col,
+            )
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Right,
+                QTextCursor.MoveMode.KeepAnchor,
+                length,
+            )
+            editor.setTextCursor(cursor)
+            editor.centerCursor()
 
     def replace_next(self):
         """Replace the current selection if it matches, then find next."""
@@ -338,6 +448,9 @@ class FindReplaceBar(QWidget):
         if not pattern:
             return 0
 
+        if self._editor.virtual_mode and self._editor.vdoc:
+            return self._replace_all_virtual()
+
         replacement = self._replace_input.text()
         text = self._editor.toPlainText()
 
@@ -357,15 +470,34 @@ class FindReplaceBar(QWidget):
 
         if count > 0:
             self._editor._flush_pending_insert()
-            cursor = self._editor.textCursor()
-            cursor.beginEditBlock()
-            cursor.select(QTextCursor.SelectionType.Document)
-            cursor.insertText(new_text)
-            cursor.endEditBlock()
-            cmd = ReplaceTextCommand(
-                self._editor, 0, len(text), text, new_text,
+            # Use setPlainText for bulk replacement — avoids expensive
+            # cursor edit block overhead (full relayout + rehighlight).
+            self._editor.setPlainText(new_text)
+            self._match_count = 0
+            self._current_match = 0
+            self._match_label.setText("0 matches")
+            self._clear_highlights()
+
+        return count
+
+    def _replace_all_virtual(self):
+        """Replace all occurrences in virtual mode via VirtualDocument."""
+        pattern = self._get_pattern()
+        replacement = self._replace_input.text()
+        vdoc = self._editor.vdoc
+
+        count = vdoc.replace_all(
+            pattern, replacement,
+            case_sensitive=self._case_check.isChecked(),
+            use_regex=self._regex_check.isChecked(),
+        )
+
+        if count > 0:
+            # Reload the current chunk to reflect changes
+            self._editor._load_chunk(
+                self._editor._chunk_start,
+                0,
             )
-            self._editor.undo_stack.push(cmd)
             self._update_match_count()
 
         return count

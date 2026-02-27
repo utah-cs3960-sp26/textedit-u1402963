@@ -42,25 +42,37 @@ class TestGuiTimingMemory:
         )
 
     def test_gui_timing_memory_large(
-        self, window, qapp, measure_memory, large_content, require_small_medium_pass
+        self, window, qapp, measure_memory, large_file_path, require_small_medium_pass
     ):
+        from editor.models.virtual_document import VirtualDocument
+
         baseline = measure_memory()
         if baseline is None:
             pytest.skip("Cannot measure RSS on this platform")
 
-        window.text_edit.setPlainText(large_content)
+        vdoc = VirtualDocument(large_file_path)
+        window._vdoc = vdoc
+        window._document.file_path = large_file_path
+        window._document.set_content("", mark_as_saved=True)
+        window.text_edit.enter_virtual_mode(vdoc, window._virtual_scrollbar)
         qapp.processEvents()
 
         after = measure_memory()
         delta = after - baseline
 
         print(f"\n{'='*60}")
-        print(f"  Memory: large.txt")
+        print(f"  Memory: large.txt [virtual mode]")
         print(f"{'='*60}")
         print(f"  Baseline:  {baseline:>10.1f} MB")
         print(f"  After:     {after:>10.1f} MB")
         print(f"  Delta:     {delta:>+10.1f} MB")
         print(f"  Limit:     {'3072.0':>10} MB")
         print(f"{'='*60}")
+
+        # Cleanup
+        if window.text_edit.virtual_mode:
+            window.text_edit.exit_virtual_mode()
+        window._vdoc = None
+        vdoc.close()
 
         assert delta < 3072, f"Memory delta {delta:.1f} MB exceeds 3 GiB limit"
