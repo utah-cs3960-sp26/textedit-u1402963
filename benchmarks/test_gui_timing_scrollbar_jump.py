@@ -44,3 +44,12 @@ class TestGuiTimingScrollbarJump:
             "Scrollbar jump medium.txt (6 jumps)",
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
+
+    def test_gui_timing_scrollbar_jump_large(
+        self, window, qapp, run_direct, large_content, require_small_medium_pass
+    ):
+        passed = self._run_jumps(
+            window, qapp, run_direct, large_content,
+            "Scrollbar jump large.txt (6 jumps)",
+        )
+        assert passed, "Avg P95 frame time exceeds 60 fps target"

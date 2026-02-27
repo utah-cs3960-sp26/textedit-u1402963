@@ -40,3 +40,27 @@ class TestGuiTimingMemory:
         self._load_and_measure(
             window, qapp, measure_memory, medium_content, "medium.txt"
         )
+
+    def test_gui_timing_memory_large(
+        self, window, qapp, measure_memory, large_content, require_small_medium_pass
+    ):
+        baseline = measure_memory()
+        if baseline is None:
+            pytest.skip("Cannot measure RSS on this platform")
+
+        window.text_edit.setPlainText(large_content)
+        qapp.processEvents()
+
+        after = measure_memory()
+        delta = after - baseline
+
+        print(f"\n{'='*60}")
+        print(f"  Memory: large.txt")
+        print(f"{'='*60}")
+        print(f"  Baseline:  {baseline:>10.1f} MB")
+        print(f"  After:     {after:>10.1f} MB")
+        print(f"  Delta:     {delta:>+10.1f} MB")
+        print(f"  Limit:     {'3072.0':>10} MB")
+        print(f"{'='*60}")
+
+        assert delta < 3072, f"Memory delta {delta:.1f} MB exceeds 3 GiB limit"

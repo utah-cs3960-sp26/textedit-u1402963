@@ -15,3 +15,10 @@ class TestGuiTimingOpen:
             lambda: window.text_edit.setPlainText(medium_content),
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
+
+    def test_gui_timing_open_large(self, window, run_timed_with_timeout, large_content, require_small_medium_pass):
+        passed = run_timed_with_timeout(
+            "Open large.txt (1,377,419 lines)",
+            lambda: window.text_edit.setPlainText(large_content),
+        )
+        assert passed, "Avg P95 frame time exceeds 60 fps target"

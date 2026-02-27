@@ -19,8 +19,10 @@ from editor.window import MainWindow
 _FILES_DIR = os.path.join(ROOT_DIR, "s-m-l-files")
 _SMALL_FILE = os.path.join(_FILES_DIR, "small.txt")
 _MEDIUM_FILE = os.path.join(_FILES_DIR, "medium.txt")
+_LARGE_FILE = os.path.join(_FILES_DIR, "large.txt")
 
 TARGET_FRAME_MS = 16.67  # 60 fps
+LARGE_TIMEOUT = 5  # seconds — fail fast for large file tests
 NUM_RUNS = 5
 
 
@@ -129,6 +131,29 @@ def get_rss_mb():
 
 
 # ---------------------------------------------------------------------------
+# Large-file gate — if ANY small or medium test fails, every large-file
+# benchmark is automatically skipped.
+# ---------------------------------------------------------------------------
+
+_sm_test_failed = False  # module-level flag set by the hook below
+
+
+def pytest_runtest_makereport(item, call):
+    """After each test's call phase, check if a non-large test failed."""
+    global _sm_test_failed
+    if call.when == "call" and call.excinfo is not None:
+        if "large" not in item.nodeid:
+            _sm_test_failed = True
+
+
+@pytest.fixture(autouse=False)
+def require_small_medium_pass():
+    """Skip this test if any earlier small/medium benchmark failed."""
+    if _sm_test_failed:
+        pytest.skip("Skipped: a small or medium benchmark failed")
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -210,6 +235,53 @@ def run_timed(qapp, collector):
 
 
 @pytest.fixture
+def run_timed_with_timeout(qapp, collector):
+    """Like run_timed but aborts if a single run exceeds LARGE_TIMEOUT."""
+    def _run(operation_name, fn, setup=None):
+        all_runs = []
+        for run_idx in range(NUM_RUNS):
+            if setup:
+                qapp.set_tracking(False)
+                setup()
+                qapp.processEvents()
+
+            collector.reset()
+            qapp.set_tracking(True)
+
+            done = [False]
+            def wrapper():
+                fn()
+                done[0] = True
+
+            start = time.perf_counter()
+            QTimer.singleShot(0, wrapper)
+            while not done[0]:
+                elapsed = time.perf_counter() - start
+                if elapsed > LARGE_TIMEOUT:
+                    qapp.set_tracking(False)
+                    pytest.fail(
+                        f"{operation_name}: run {run_idx+1} timed out "
+                        f"after {elapsed:.1f}s (limit {LARGE_TIMEOUT}s)"
+                    )
+                qapp.processEvents()
+            qapp.processEvents()
+            wall_ms = (time.perf_counter() - start) * 1000
+            qapp.set_tracking(False)
+
+            all_runs.append({
+                "wall": wall_ms,
+                "max": collector.max_ms,
+                "avg": collector.avg_ms,
+                "p95": collector.p95_ms,
+                "frames": collector.frame_count,
+            })
+
+        return _print_multi_result(operation_name, all_runs)
+
+    return _run
+
+
+@pytest.fixture
 def run_direct(qapp, collector):
     """Run fn directly NUM_RUNS times, average results.
 
@@ -249,6 +321,46 @@ def run_direct(qapp, collector):
     return _run
 
 
+@pytest.fixture
+def run_direct_with_timeout(qapp, collector):
+    """Like run_direct but the test should use its own timeout logic."""
+    def _run(operation_name, fn, setup=None):
+        all_runs = []
+        for run_idx in range(NUM_RUNS):
+            if setup:
+                qapp.set_tracking(False)
+                setup()
+                qapp.processEvents()
+
+            collector.reset()
+            qapp.set_tracking(True)
+
+            start = time.perf_counter()
+            fn()
+            qapp.processEvents()
+            wall_ms = (time.perf_counter() - start) * 1000
+            elapsed = time.perf_counter() - start
+            qapp.set_tracking(False)
+
+            if elapsed > LARGE_TIMEOUT:
+                pytest.fail(
+                    f"{operation_name}: run {run_idx+1} timed out "
+                    f"after {elapsed:.1f}s (limit {LARGE_TIMEOUT}s)"
+                )
+
+            all_runs.append({
+                "wall": wall_ms,
+                "max": collector.max_ms,
+                "avg": collector.avg_ms,
+                "p95": collector.p95_ms,
+                "frames": collector.frame_count,
+            })
+
+        return _print_multi_result(operation_name, all_runs)
+
+    return _run
+
+
 @pytest.fixture(scope="session")
 def small_content():
     with open(_SMALL_FILE, "r", encoding="utf-8", errors="replace") as f:
@@ -258,6 +370,12 @@ def small_content():
 @pytest.fixture(scope="session")
 def medium_content():
     with open(_MEDIUM_FILE, "r", encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def large_content():
+    with open(_LARGE_FILE, "r", encoding="utf-8", errors="replace") as f:
         return f.read()
 
 

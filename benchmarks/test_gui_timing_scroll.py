@@ -40,3 +40,10 @@ class TestGuiTimingScroll:
             "Scroll medium.txt (30 pages down + 30 up)",
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
+
+    def test_gui_timing_scroll_large(self, window, qapp, run_direct, large_content, require_small_medium_pass):
+        passed = self._run_scroll(
+            window, qapp, run_direct, large_content,
+            "Scroll large.txt (30 pages down + 30 up)",
+        )
+        assert passed, "Avg P95 frame time exceeds 60 fps target"
