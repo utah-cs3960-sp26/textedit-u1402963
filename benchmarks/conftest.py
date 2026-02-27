@@ -1,8 +1,8 @@
+import gc
 import os
 import sys
 import time
 import statistics
-import contextlib
 
 import pytest
 
@@ -24,6 +24,7 @@ _LARGE_FILE = os.path.join(_FILES_DIR, "large.txt")
 TARGET_FRAME_MS = 16.67  # 60 fps
 LARGE_TIMEOUT = 5  # seconds — fail fast for large file tests
 NUM_RUNS = 5
+WARMUP_RUNS = 1  # discarded before measurement
 
 
 class FrameCollector:
@@ -58,35 +59,54 @@ class FrameCollector:
         return len(self.frame_times)
 
 
-def _print_multi_result(operation, runs):
-    """Print a formatted multi-run benchmark report. Returns True if passed."""
-    avg_wall = statistics.mean(r["wall"] for r in runs)
-    avg_max = statistics.mean(r["max"] for r in runs)
-    avg_avg = statistics.mean(r["avg"] for r in runs)
-    avg_p95 = statistics.mean(r["p95"] for r in runs)
-    avg_frames = statistics.mean(r["frames"] for r in runs)
+def _print_multi_result(operation, runs, all_frames):
+    """Print a formatted multi-run benchmark report.
 
-    passed = avg_p95 <= TARGET_FRAME_MS
+    ``runs`` contains per-run wall-clock summaries.
+    ``all_frames`` is the pooled list of every frame time across all runs.
+    Returns True if passed.
+    """
+    # Aggregate statistics over pooled frames
+    if all_frames:
+        agg_max = max(all_frames)
+        agg_avg = statistics.mean(all_frames)
+        agg_p95 = sorted(all_frames)[min(int(len(all_frames) * 0.95), len(all_frames) - 1)]
+        agg_p99 = sorted(all_frames)[min(int(len(all_frames) * 0.99), len(all_frames) - 1)]
+        agg_median = statistics.median(all_frames)
+        agg_stdev = statistics.stdev(all_frames) if len(all_frames) > 1 else 0.0
+        over_target = [f for f in all_frames if f > TARGET_FRAME_MS]
+    else:
+        agg_max = agg_avg = agg_p95 = agg_p99 = agg_median = agg_stdev = 0.0
+        over_target = []
+
+    passed = agg_p95 <= TARGET_FRAME_MS
     status = "PASS" if passed else "FAIL"
 
-    print(f"\n{'='*60}")
-    print(f"  {operation} -- {len(runs)} runs")
-    print(f"{'='*60}")
+    print(f"\n{'='*65}")
+    print(f"  {operation} -- {len(runs)} runs ({WARMUP_RUNS} warmup discarded)")
+    print(f"{'='*65}")
     for i, r in enumerate(runs, 1):
         print(
             f"  Run {i}:  wall={r['wall']:>8.1f}ms  "
             f"max={r['max']:>8.1f}ms  "
-            f"p95={r['p95']:>8.1f}ms"
+            f"p95={r['p95']:>8.1f}ms  "
+            f"frames={r['frames']}"
         )
-    print(f"  {'-'*56}")
-    print(f"  Avg wall clock:    {avg_wall:>10.1f} ms")
-    print(f"  Avg max frame:     {avg_max:>10.1f} ms")
-    print(f"  Avg avg frame:     {avg_avg:>10.1f} ms")
-    print(f"  Avg P95 frame:     {avg_p95:>10.1f} ms")
-    print(f"  Avg frame count:   {avg_frames:>10.0f}")
-    print(f"  Target (P95):      <={TARGET_FRAME_MS:.2f} ms (60 fps)")
-    print(f"  Result:            {status}")
-    print(f"{'='*60}")
+    print(f"  {'-'*61}")
+    print(f"  Total frames pooled: {len(all_frames)}")
+    print(f"  Aggregate max:       {agg_max:>10.1f} ms")
+    print(f"  Aggregate P99:       {agg_p99:>10.1f} ms")
+    print(f"  Aggregate P95:       {agg_p95:>10.1f} ms")
+    print(f"  Aggregate median:    {agg_median:>10.1f} ms")
+    print(f"  Aggregate avg:       {agg_avg:>10.1f} ms")
+    print(f"  Aggregate stdev:     {agg_stdev:>10.1f} ms")
+    print(f"  Frames > 16.67ms:   {len(over_target):>10} / {len(all_frames)}")
+    if over_target:
+        worst = sorted(over_target, reverse=True)[:5]
+        print(f"  Worst offenders:     {', '.join(f'{v:.1f}ms' for v in worst)}")
+    print(f"  Target (P95):        <={TARGET_FRAME_MS:.2f} ms (60 fps)")
+    print(f"  Result:              {status}")
+    print(f"{'='*65}")
     return passed
 
 
@@ -119,7 +139,20 @@ def get_rss_mb():
         if fn(handle, ctypes.byref(pmc), pmc.cb):
             return pmc.WorkingSetSize / (1024 * 1024)
         return None
+    elif sys.platform == "linux":
+        # /proc/self/statm fields: size resident shared text lib data dt (in pages)
+        try:
+            with open("/proc/self/statm") as f:
+                fields = f.read().split()
+            resident_pages = int(fields[1])
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            return (resident_pages * page_size) / (1024 * 1024)
+        except (OSError, IndexError, ValueError):
+            return None
     else:
+        # macOS / other Unix: ru_maxrss is peak RSS (bytes on macOS, KB on others).
+        # This is peak, not current, so deltas may be inaccurate if peak was set
+        # by an earlier operation. Best effort.
         try:
             import resource
             rusage = resource.getrusage(resource.RUSAGE_SELF)
@@ -187,31 +220,44 @@ def collector(qapp):
     qapp.set_frame_timer(original)
 
 
+def _gc_settle():
+    """Force GC and give the process a moment to stabilize."""
+    gc.collect()
+    gc.collect()
+
+
 @pytest.fixture
 def run_timed(qapp, collector):
-    """Run fn inside the event loop NUM_RUNS times, average results.
+    """Run fn inside the event loop NUM_RUNS times (+ warmup), aggregate results.
 
     Use for single blocking operations (setPlainText, replace_all) that need
     QTimer wrapping so notify() captures the time.
 
     ``setup`` is called before each run (outside the timed section).
-    Returns True if averaged P95 <= target.
+    Returns True if aggregate P95 <= target.
     """
     def _run(operation_name, fn, setup=None):
         all_runs = []
-        for _ in range(NUM_RUNS):
+        all_frames = []
+
+        for run_idx in range(WARMUP_RUNS + NUM_RUNS):
             if setup:
                 qapp.set_tracking(False)
                 setup()
                 qapp.processEvents()
 
+            _gc_settle()
             collector.reset()
             qapp.set_tracking(True)
 
             done = [False]
+            error = [None]
+
             def wrapper():
-                fn()
-                done[0] = True
+                try:
+                    fn()
+                finally:
+                    done[0] = True
 
             start = time.perf_counter()
             QTimer.singleShot(0, wrapper)
@@ -221,6 +267,11 @@ def run_timed(qapp, collector):
             wall_ms = (time.perf_counter() - start) * 1000
             qapp.set_tracking(False)
 
+            # Discard warmup runs
+            if run_idx < WARMUP_RUNS:
+                continue
+
+            all_frames.extend(collector.frame_times)
             all_runs.append({
                 "wall": wall_ms,
                 "max": collector.max_ms,
@@ -229,7 +280,7 @@ def run_timed(qapp, collector):
                 "frames": collector.frame_count,
             })
 
-        return _print_multi_result(operation_name, all_runs)
+        return _print_multi_result(operation_name, all_runs, all_frames)
 
     return _run
 
@@ -239,19 +290,25 @@ def run_timed_with_timeout(qapp, collector):
     """Like run_timed but aborts if a single run exceeds LARGE_TIMEOUT."""
     def _run(operation_name, fn, setup=None):
         all_runs = []
-        for run_idx in range(NUM_RUNS):
+        all_frames = []
+
+        for run_idx in range(WARMUP_RUNS + NUM_RUNS):
             if setup:
                 qapp.set_tracking(False)
                 setup()
                 qapp.processEvents()
 
+            _gc_settle()
             collector.reset()
             qapp.set_tracking(True)
 
             done = [False]
+
             def wrapper():
-                fn()
-                done[0] = True
+                try:
+                    fn()
+                finally:
+                    done[0] = True
 
             start = time.perf_counter()
             QTimer.singleShot(0, wrapper)
@@ -268,6 +325,11 @@ def run_timed_with_timeout(qapp, collector):
             wall_ms = (time.perf_counter() - start) * 1000
             qapp.set_tracking(False)
 
+            # Discard warmup runs
+            if run_idx < WARMUP_RUNS:
+                continue
+
+            all_frames.extend(collector.frame_times)
             all_runs.append({
                 "wall": wall_ms,
                 "max": collector.max_ms,
@@ -276,29 +338,32 @@ def run_timed_with_timeout(qapp, collector):
                 "frames": collector.frame_count,
             })
 
-        return _print_multi_result(operation_name, all_runs)
+        return _print_multi_result(operation_name, all_runs, all_frames)
 
     return _run
 
 
 @pytest.fixture
 def run_direct(qapp, collector):
-    """Run fn directly NUM_RUNS times, average results.
+    """Run fn directly NUM_RUNS times (+ warmup), aggregate results.
 
     Use for multi-step operations (scrolling, scrollbar jumps) where each
     step already dispatches events through notify() via QTest or QTimer.
 
     ``setup`` is called before each run (outside the timed section).
-    Returns True if averaged P95 <= target.
+    Returns True if aggregate P95 <= target.
     """
     def _run(operation_name, fn, setup=None):
         all_runs = []
-        for _ in range(NUM_RUNS):
+        all_frames = []
+
+        for run_idx in range(WARMUP_RUNS + NUM_RUNS):
             if setup:
                 qapp.set_tracking(False)
                 setup()
                 qapp.processEvents()
 
+            _gc_settle()
             collector.reset()
             qapp.set_tracking(True)
 
@@ -308,6 +373,11 @@ def run_direct(qapp, collector):
             wall_ms = (time.perf_counter() - start) * 1000
             qapp.set_tracking(False)
 
+            # Discard warmup runs
+            if run_idx < WARMUP_RUNS:
+                continue
+
+            all_frames.extend(collector.frame_times)
             all_runs.append({
                 "wall": wall_ms,
                 "max": collector.max_ms,
@@ -316,22 +386,25 @@ def run_direct(qapp, collector):
                 "frames": collector.frame_count,
             })
 
-        return _print_multi_result(operation_name, all_runs)
+        return _print_multi_result(operation_name, all_runs, all_frames)
 
     return _run
 
 
 @pytest.fixture
 def run_direct_with_timeout(qapp, collector):
-    """Like run_direct but the test should use its own timeout logic."""
+    """Like run_direct but fails if any run exceeds LARGE_TIMEOUT."""
     def _run(operation_name, fn, setup=None):
         all_runs = []
-        for run_idx in range(NUM_RUNS):
+        all_frames = []
+
+        for run_idx in range(WARMUP_RUNS + NUM_RUNS):
             if setup:
                 qapp.set_tracking(False)
                 setup()
                 qapp.processEvents()
 
+            _gc_settle()
             collector.reset()
             qapp.set_tracking(True)
 
@@ -339,15 +412,19 @@ def run_direct_with_timeout(qapp, collector):
             fn()
             qapp.processEvents()
             wall_ms = (time.perf_counter() - start) * 1000
-            elapsed = time.perf_counter() - start
             qapp.set_tracking(False)
 
-            if elapsed > LARGE_TIMEOUT:
+            if (time.perf_counter() - start) > LARGE_TIMEOUT:
                 pytest.fail(
                     f"{operation_name}: run {run_idx+1} timed out "
-                    f"after {elapsed:.1f}s (limit {LARGE_TIMEOUT}s)"
+                    f"after {wall_ms/1000:.1f}s (limit {LARGE_TIMEOUT}s)"
                 )
 
+            # Discard warmup runs
+            if run_idx < WARMUP_RUNS:
+                continue
+
+            all_frames.extend(collector.frame_times)
             all_runs.append({
                 "wall": wall_ms,
                 "max": collector.max_ms,
@@ -356,7 +433,7 @@ def run_direct_with_timeout(qapp, collector):
                 "frames": collector.frame_count,
             })
 
-        return _print_multi_result(operation_name, all_runs)
+        return _print_multi_result(operation_name, all_runs, all_frames)
 
     return _run
 

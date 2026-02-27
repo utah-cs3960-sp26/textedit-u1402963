@@ -28,17 +28,17 @@ class FrameTimerApp(QApplication):
             return super().notify(receiver, event)
 
         self._notify_depth += 1
-        if self._notify_depth == 1:
-            start = time.perf_counter()
-            result = super().notify(receiver, event)
+        try:
+            if self._notify_depth == 1:
+                start = time.perf_counter()
+                result = super().notify(receiver, event)
+                elapsed_ms = (time.perf_counter() - start) * 1000
+                self._frame_timer_widget.record_frame(elapsed_ms)
+                return result
+            else:
+                return super().notify(receiver, event)
+        finally:
             self._notify_depth -= 1
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            self._frame_timer_widget.record_frame(elapsed_ms)
-            return result
-        else:
-            result = super().notify(receiver, event)
-            self._notify_depth -= 1
-            return result
 
 
 class FrameTimerWidget(QLabel):
