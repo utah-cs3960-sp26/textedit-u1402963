@@ -357,16 +357,30 @@ class FindReplaceBar(QWidget):
 
         if count > 0:
             self._editor._flush_pending_insert()
+
+            # Skip highlighting during bulk replace to avoid per-block overhead
+            highlighter = self._editor._find_highlighter()
+            if highlighter:
+                highlighter._skip = True
+
             cursor = self._editor.textCursor()
             cursor.beginEditBlock()
             cursor.select(QTextCursor.SelectionType.Document)
             cursor.insertText(new_text)
             cursor.endEditBlock()
+
+            if highlighter:
+                highlighter._skip = False
+
+            self._editor._update_line_number_area_width(0)
+            self._editor.viewport().update()
+
             cmd = ReplaceTextCommand(
                 self._editor, 0, len(text), text, new_text,
             )
             self._editor.undo_stack.push(cmd)
-            self._update_match_count()
+            # Defer match count update to a separate frame
+            QTimer.singleShot(0, self._update_match_count)
 
         return count
 

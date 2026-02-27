@@ -4,12 +4,17 @@ from PyQt6.QtGui import (
     QColor,
     QPainter,
     QKeyEvent,
+    QTextCursor,
     QUndoStack,
     QPalette,
     QFont,
     QFontMetrics,
     QFontDatabase,
 )
+
+import time
+
+from PyQt6.QtCore import QTimer
 
 from editor.undo_commands import InsertTextCommand, DeleteTextCommand, ReplaceTextCommand
 
@@ -44,6 +49,7 @@ class CodeEditor(QPlainTextEdit):
         self._pending_insert_text = ""
         self._pending_insert_start = -1
         self._is_applying_undo_redo = False
+        self._bulk_load_state = None
         self._line_number_bg = self.DEFAULT_LINE_NUMBER_BG
         self._line_number_fg = self.DEFAULT_LINE_NUMBER_FG
         fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
@@ -199,7 +205,7 @@ class CodeEditor(QPlainTextEdit):
                 super().keyPressEvent(event)
                 cmd = DeleteTextCommand(self, start, end, deleted)
                 self._undo_stack.push(cmd)
-            elif cursor.position() < len(self.toPlainText()):
+            elif cursor.position() < self.document().characterCount() - 1:
                 pos = cursor.position()
                 cursor.setPosition(pos + 1, cursor.MoveMode.KeepAnchor)
                 deleted = cursor.selectedText()
@@ -267,10 +273,93 @@ class CodeEditor(QPlainTextEdit):
         self._undo_stack.clear()
         super().clear()
 
+    BULK_CHUNK_TARGET_MS = 10.0
+    BULK_CHUNK_INITIAL = 32768
+
+    def _find_highlighter(self):
+        """Find the DocumentHighlighter attached to this editor's document."""
+        from editor.highlighters.document_highlighter import DocumentHighlighter
+        for child in self.document().children():
+            if isinstance(child, DocumentHighlighter):
+                return child
+        return None
+
     def setPlainText(self, text: str):
         self._flush_pending_insert()
         self._undo_stack.clear()
-        super().setPlainText(text)
+        self._bulk_load_state = None
+
+        # For trivially small texts, just do it directly
+        if len(text) < 1024:
+            super().setPlainText(text)
+            return
+
+        doc = self.document()
+
+        # Detach highlighter to prevent C++→Python calls during loading
+        highlighter = self._find_highlighter()
+        if highlighter:
+            highlighter.setDocument(None)
+
+        # Block widget signals and disable painting during chunked load
+        self.blockSignals(True)
+        self.setUpdatesEnabled(False)
+        doc.clear()
+        cursor = QTextCursor(doc)
+
+        self._bulk_load_state = {
+            "text": text,
+            "pos": 0,
+            "cursor": cursor,
+            "highlighter": highlighter,
+            "doc": doc,
+            "chunk": self.BULK_CHUNK_INITIAL,
+        }
+        QTimer.singleShot(0, self._bulk_load_step)
+
+    def _bulk_load_step(self):
+        state = self._bulk_load_state
+        if state is None:
+            return
+
+        text = state["text"]
+        pos = state["pos"]
+        chunk = state["chunk"]
+        end = min(len(text), pos + chunk)
+
+        t0 = time.perf_counter()
+        state["cursor"].insertText(text[pos:end])
+        dt_ms = (time.perf_counter() - t0) * 1000.0
+
+        state["pos"] = end
+
+        # Adapt chunk size to stay under target
+        if dt_ms > 0:
+            scale = max(0.5, min(1.5, self.BULK_CHUNK_TARGET_MS / dt_ms))
+            state["chunk"] = max(4096, min(131072, int(chunk * scale)))
+
+        if end >= len(text):
+            QTimer.singleShot(0, self._bulk_load_finish)
+        else:
+            QTimer.singleShot(0, self._bulk_load_step)
+
+    def _bulk_load_finish(self):
+        state = self._bulk_load_state
+        if state is None:
+            return
+        self._bulk_load_state = None
+
+        doc = state["doc"]
+        highlighter = state["highlighter"]
+
+        self.blockSignals(False)
+        self.setUpdatesEnabled(True)
+
+        if highlighter:
+            highlighter.setDocument(doc)
+
+        self._update_line_number_area_width(0)
+        self.viewport().update()
 
     def cut(self):
         """Cut selected text with undo support."""

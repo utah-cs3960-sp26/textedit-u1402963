@@ -139,7 +139,7 @@ class TestSaveAs:
     def test_save_as_resets_unsaved_indicator(self, window, tmp_path):
         new_file = tmp_path / "saved.txt"
         window.text_edit.setPlainText("content")
-        window._document._current_content = "content"
+        window._document.mark_dirty()
 
         with patch("editor.window.QFileDialog.getSaveFileName", return_value=(str(new_file), "")):
             window.save_file_as()
@@ -262,7 +262,7 @@ class TestFileControllerErrorHandling:
         ctrl = FileController(doc)
         assert ctrl.is_modified is False
         
-        doc._current_content = "changed"
+        doc.mark_dirty()
         assert ctrl.is_modified is True
     
     def test_current_file_property(self):
@@ -278,18 +278,18 @@ class TestFileControllerErrorHandling:
 
 
 class TestDocumentModelProperties:
-    def test_original_content_getter(self):
+    def test_set_content_mark_as_saved(self):
         from editor.models.document import DocumentModel
         doc = DocumentModel()
-        assert doc.original_content == ""
+        assert doc.is_modified is False
         
         doc.set_content("hello", mark_as_saved=True)
-        assert doc.original_content == "hello"
+        assert doc.is_modified is False
     
-    def test_current_content_getter(self):
+    def test_mark_dirty(self):
         from editor.models.document import DocumentModel
         doc = DocumentModel()
-        assert doc.current_content == ""
+        assert doc.is_modified is False
         
-        doc.current_content = "world"
-        assert doc.current_content == "world"
+        doc.mark_dirty()
+        assert doc.is_modified is True

@@ -78,13 +78,9 @@ class MainWindow(QMainWindow):
     @_is_modified.setter
     def _is_modified(self, value):
         if value:
-            self._document._current_content = self.text_edit.toPlainText()
+            self._document.mark_dirty()
         else:
             self._document.mark_saved()
-
-    @property
-    def _original_content(self):
-        return self._document.original_content
 
     def _setup_central_widget(self):
         container = QWidget()
@@ -328,8 +324,7 @@ class MainWindow(QMainWindow):
             self._apply_settings(self._settings)
 
     def _mark_modified(self):
-        current_content = self.text_edit.toPlainText()
-        self._document.current_content = current_content
+        self._document.mark_dirty()
         self._update_status()
 
     def _update_status(self):
@@ -404,8 +399,8 @@ class MainWindow(QMainWindow):
                     self.text_edit.clear()
                     self._document.reset()
                     self._document.file_path = file_path
-                    self._document.set_content("", mark_as_saved=True)
                     self._setup_highlighter(file_path)
+                    self._document.mark_saved()
                     self._update_status()
                     self.sidebar.file_tree.highlight_file(file_path)
                 except OSError as e:
@@ -415,6 +410,7 @@ class MainWindow(QMainWindow):
         self.text_edit.clear()
         self._document.reset()
         self._setup_highlighter()
+        self._document.mark_saved()
         self._update_status()
 
     def open_file(self):
@@ -445,8 +441,9 @@ class MainWindow(QMainWindow):
         success, content, error_msg = self._controller.open_file(file_path)
         if success:
             self.text_edit.setPlainText(content)
-            self._update_status()
             self._setup_highlighter(file_path, content)
+            self._document.mark_saved()
+            self._update_status()
         else:
             QMessageBox.critical(self, "Error", error_msg)
 
@@ -476,8 +473,9 @@ class MainWindow(QMainWindow):
         success, content, error_msg = self._controller.open_file(file_path)
         if success:
             self.text_edit.setPlainText(content)
-            self._update_status()
             self._setup_highlighter(file_path, content)
+            self._document.mark_saved()
+            self._update_status()
             self.sidebar.highlight_file(file_path)
         else:
             QMessageBox.critical(self, "Error", error_msg)
@@ -489,8 +487,9 @@ class MainWindow(QMainWindow):
             file_path = self._document.file_path
             success, error_msg = self._controller.save_file(file_path, content)
             if success:
-                self._update_status()
                 self._setup_highlighter(self._document.file_path)
+                self._document.mark_saved()
+                self._update_status()
             else:
                 QMessageBox.critical(self, "Error", error_msg)
         else:
@@ -523,8 +522,9 @@ class MainWindow(QMainWindow):
 
         success, error_msg = self._controller.save_file(file_path, content)
         if success:
-            self._update_status()
             self._setup_highlighter(self._document.file_path)
+            self._document.mark_saved()
+            self._update_status()
         else:
             QMessageBox.critical(self, "Error", error_msg)
 
