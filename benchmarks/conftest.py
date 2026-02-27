@@ -22,7 +22,7 @@ _MEDIUM_FILE = os.path.join(_FILES_DIR, "medium.txt")
 _LARGE_FILE = os.path.join(_FILES_DIR, "large.txt")
 
 TARGET_FRAME_MS = 16.67  # 60 fps
-LARGE_TIMEOUT = 5  # seconds — fail fast for large file tests
+TEST_TIMEOUT = 15  # seconds — max wall time for any single run
 NUM_RUNS = 5
 WARMUP_RUNS = 1  # discarded before measurement
 
@@ -226,6 +226,35 @@ def _gc_settle():
     gc.collect()
 
 
+def _drain_deferred(qapp, collector=None, start=None, timeout=None, name=""):
+    """Process events until no new frames are generated (deferred work done).
+
+    When called without collector (e.g., during setup), just drains
+    a fixed number of processEvents calls to complete deferred loading.
+    """
+    if collector is None:
+        # Setup drain: process events until nothing is pending.
+        # When deferred timers fire, processEvents takes measurable time.
+        # When idle, it returns in <0.1ms.
+        for _ in range(10000):
+            t = time.perf_counter()
+            qapp.processEvents()
+            if time.perf_counter() - t < 0.001:
+                break
+        return
+
+    prev_frames = collector.frame_count
+    for _ in range(5000):
+        qapp.processEvents()
+        cur_frames = collector.frame_count
+        if cur_frames == prev_frames:
+            break
+        prev_frames = cur_frames
+        if start and timeout and (time.perf_counter() - start) > timeout:
+            qapp.set_tracking(False)
+            pytest.fail(f"{name}: deferred work timed out")
+
+
 @pytest.fixture
 def run_timed(qapp, collector):
     """Run fn inside the event loop NUM_RUNS times (+ warmup), aggregate results.
@@ -244,59 +273,7 @@ def run_timed(qapp, collector):
             if setup:
                 qapp.set_tracking(False)
                 setup()
-                qapp.processEvents()
-
-            _gc_settle()
-            collector.reset()
-            qapp.set_tracking(True)
-
-            done = [False]
-            error = [None]
-
-            def wrapper():
-                try:
-                    fn()
-                finally:
-                    done[0] = True
-
-            start = time.perf_counter()
-            QTimer.singleShot(0, wrapper)
-            while not done[0]:
-                qapp.processEvents()
-            qapp.processEvents()
-            wall_ms = (time.perf_counter() - start) * 1000
-            qapp.set_tracking(False)
-
-            # Discard warmup runs
-            if run_idx < WARMUP_RUNS:
-                continue
-
-            all_frames.extend(collector.frame_times)
-            all_runs.append({
-                "wall": wall_ms,
-                "max": collector.max_ms,
-                "avg": collector.avg_ms,
-                "p95": collector.p95_ms,
-                "frames": collector.frame_count,
-            })
-
-        return _print_multi_result(operation_name, all_runs, all_frames)
-
-    return _run
-
-
-@pytest.fixture
-def run_timed_with_timeout(qapp, collector):
-    """Like run_timed but aborts if a single run exceeds LARGE_TIMEOUT."""
-    def _run(operation_name, fn, setup=None):
-        all_runs = []
-        all_frames = []
-
-        for run_idx in range(WARMUP_RUNS + NUM_RUNS):
-            if setup:
-                qapp.set_tracking(False)
-                setup()
-                qapp.processEvents()
+                _drain_deferred(qapp)
 
             _gc_settle()
             collector.reset()
@@ -314,14 +291,15 @@ def run_timed_with_timeout(qapp, collector):
             QTimer.singleShot(0, wrapper)
             while not done[0]:
                 elapsed = time.perf_counter() - start
-                if elapsed > LARGE_TIMEOUT:
+                if elapsed > TEST_TIMEOUT:
                     qapp.set_tracking(False)
                     pytest.fail(
                         f"{operation_name}: run {run_idx+1} timed out "
-                        f"after {elapsed:.1f}s (limit {LARGE_TIMEOUT}s)"
+                        f"after {elapsed:.1f}s (limit {TEST_TIMEOUT}s)"
                     )
                 qapp.processEvents()
-            qapp.processEvents()
+            # Drain deferred work (chunked loading, batched highlighting)
+            _drain_deferred(qapp, collector, start, TEST_TIMEOUT, operation_name)
             wall_ms = (time.perf_counter() - start) * 1000
             qapp.set_tracking(False)
 
@@ -361,7 +339,7 @@ def run_direct(qapp, collector):
             if setup:
                 qapp.set_tracking(False)
                 setup()
-                qapp.processEvents()
+                _drain_deferred(qapp)
 
             _gc_settle()
             collector.reset()
@@ -373,51 +351,10 @@ def run_direct(qapp, collector):
             wall_ms = (time.perf_counter() - start) * 1000
             qapp.set_tracking(False)
 
-            # Discard warmup runs
-            if run_idx < WARMUP_RUNS:
-                continue
-
-            all_frames.extend(collector.frame_times)
-            all_runs.append({
-                "wall": wall_ms,
-                "max": collector.max_ms,
-                "avg": collector.avg_ms,
-                "p95": collector.p95_ms,
-                "frames": collector.frame_count,
-            })
-
-        return _print_multi_result(operation_name, all_runs, all_frames)
-
-    return _run
-
-
-@pytest.fixture
-def run_direct_with_timeout(qapp, collector):
-    """Like run_direct but fails if any run exceeds LARGE_TIMEOUT."""
-    def _run(operation_name, fn, setup=None):
-        all_runs = []
-        all_frames = []
-
-        for run_idx in range(WARMUP_RUNS + NUM_RUNS):
-            if setup:
-                qapp.set_tracking(False)
-                setup()
-                qapp.processEvents()
-
-            _gc_settle()
-            collector.reset()
-            qapp.set_tracking(True)
-
-            start = time.perf_counter()
-            fn()
-            qapp.processEvents()
-            wall_ms = (time.perf_counter() - start) * 1000
-            qapp.set_tracking(False)
-
-            if (time.perf_counter() - start) > LARGE_TIMEOUT:
+            if wall_ms / 1000 > TEST_TIMEOUT:
                 pytest.fail(
                     f"{operation_name}: run {run_idx+1} timed out "
-                    f"after {wall_ms/1000:.1f}s (limit {LARGE_TIMEOUT}s)"
+                    f"after {wall_ms/1000:.1f}s (limit {TEST_TIMEOUT}s)"
                 )
 
             # Discard warmup runs

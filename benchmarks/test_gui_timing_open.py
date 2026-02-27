@@ -16,8 +16,8 @@ class TestGuiTimingOpen:
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
 
-    def test_gui_timing_open_large(self, window, run_timed_with_timeout, large_content, require_small_medium_pass):
-        passed = run_timed_with_timeout(
+    def test_gui_timing_open_large(self, window, run_timed, large_content, require_small_medium_pass):
+        passed = run_timed(
             "Open large.txt (1,377,419 lines)",
             lambda: window.text_edit.setPlainText(large_content),
         )
