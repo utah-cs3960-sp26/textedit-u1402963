@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
     @_is_modified.setter
     def _is_modified(self, value):
         if value:
-            self._document._current_content = self.text_edit.toPlainText()
+            self._document.mark_dirty()
         else:
             self._document.mark_saved()
 
@@ -328,8 +328,7 @@ class MainWindow(QMainWindow):
             self._apply_settings(self._settings)
 
     def _mark_modified(self):
-        current_content = self.text_edit.toPlainText()
-        self._document.current_content = current_content
+        self._document.mark_dirty()
         self._update_status()
 
     def _update_status(self):

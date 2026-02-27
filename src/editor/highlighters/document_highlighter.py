@@ -27,6 +27,7 @@ class DocumentHighlighter(QSyntaxHighlighter):
         self._incremental_manager = IncrementalManager()
         self._lang_id = lang_id
         self._tokenizer = self._get_tokenizer(lang_id)
+        self._skip = False
 
     def _get_tokenizer(self, lang_id: str) -> BaseTokenizer:
         """Get tokenizer for the given language, falling back to plain."""
@@ -48,12 +49,21 @@ class DocumentHighlighter(QSyntaxHighlighter):
         self._incremental_manager.clear()
         self.rehighlight()
 
+    def rehighlight(self) -> None:
+        """Override to skip when bulk operations are in progress."""
+        if self._skip:
+            return
+        super().rehighlight()
+
     def highlightBlock(self, text: str) -> None:
         """Qt override: Highlight a single block of text.
 
         Args:
             text: The text content of the block to highlight.
         """
+        if self._skip:
+            return
+
         prev_state_id = self.previousBlockState()
         state_stack = self._stack_pool.get(prev_state_id)
 
