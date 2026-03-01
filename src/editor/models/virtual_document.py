@@ -157,11 +157,12 @@ class VirtualDocument:
         return max(0, line)
 
     def find_all(self, pattern: str, case_sensitive: bool = False,
-                 use_regex: bool = False):
+                 use_regex: bool = False, abort_flag=None):
         """
         Find all matches in the document.
         Returns list of (line_no, column, match_length).
         Searches mmap directly for speed.
+        abort_flag: optional threading.Event checked periodically to exit early.
         """
         results = []
 
@@ -177,6 +178,8 @@ class VirtualDocument:
 
             # Search line by line (handles both modified and unmodified)
             for line_no in range(self.line_count):
+                if abort_flag and line_no % 1000 == 0 and abort_flag.is_set():
+                    return results
                 line_text = self.get_line(line_no)
                 for m in compiled.finditer(line_text):
                     results.append((line_no, m.start(), m.end() - m.start()))
@@ -192,6 +195,8 @@ class VirtualDocument:
                 # Fast mmap search for case-sensitive plain text
                 pos = 0
                 while True:
+                    if abort_flag and abort_flag.is_set():
+                        return results
                     idx = self._mmap.find(pattern_bytes, pos)
                     if idx == -1:
                         break
@@ -217,6 +222,8 @@ class VirtualDocument:
                 # Case-insensitive: search line by line
                 lower_pattern = pattern.lower()
                 for line_no in range(self.line_count):
+                    if abort_flag and line_no % 1000 == 0 and abort_flag.is_set():
+                        return results
                     line_text = self.get_line(line_no)
                     search_text = line_text.lower()
                     start = 0

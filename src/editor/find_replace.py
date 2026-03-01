@@ -1,6 +1,7 @@
 """Find and Replace bar widget for the code editor."""
 
 import re
+import threading
 
 from PyQt6.QtWidgets import (
     QWidget,
@@ -11,11 +12,39 @@ from PyQt6.QtWidgets import (
     QLabel,
     QCheckBox,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QThread, QObject, pyqtSignal
 from PyQt6.QtGui import QTextDocument, QTextCursor, QColor, QTextCharFormat
 from PyQt6.QtWidgets import QTextEdit
 
 from editor.undo_commands import ReplaceTextCommand
+
+
+class FindWorker(QObject):
+    """Runs VirtualDocument.find_all on a background thread."""
+
+    finished = pyqtSignal(list, int)
+
+    def __init__(self, vdoc, pattern, case_sensitive, use_regex, generation):
+        super().__init__()
+        self._vdoc = vdoc
+        self._pattern = pattern
+        self._case_sensitive = case_sensitive
+        self._use_regex = use_regex
+        self._generation = generation
+        self._abort = threading.Event()
+
+    def abort(self):
+        self._abort.set()
+
+    def run(self):
+        results = self._vdoc.find_all(
+            self._pattern,
+            case_sensitive=self._case_sensitive,
+            use_regex=self._use_regex,
+            abort_flag=self._abort,
+        )
+        if not self._abort.is_set():
+            self.finished.emit(results, self._generation)
 
 
 class FindReplaceBar(QWidget):
@@ -30,12 +59,16 @@ class FindReplaceBar(QWidget):
         self._match_count = 0
         self._current_match = 0
         self._extra_selections = []
+        self._search_generation = 0
+        self._find_thread = None
+        self._find_worker = None
+        self._cached_virtual_matches = []
         self.setVisible(False)
         self._setup_ui()
 
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.setInterval(150)
+        self._debounce_timer.setInterval(400)
         self._debounce_timer.timeout.connect(self._on_search_changed)
 
     def _setup_ui(self):
@@ -108,7 +141,62 @@ class FindReplaceBar(QWidget):
         main_layout.addLayout(replace_row)
 
     def _debounce_search(self):
+        if self._find_worker:
+            self._find_worker.abort()
         self._debounce_timer.start()
+
+    def _cancel_search(self):
+        """Cancel any running background search."""
+        if self._find_worker:
+            self._find_worker.abort()
+            try:
+                self._find_worker.finished.disconnect(self._on_find_finished)
+            except TypeError:
+                pass
+        if self._find_thread and self._find_thread.isRunning():
+            self._find_thread.quit()
+            self._find_thread.wait(2000)
+        self._find_worker = None
+        self._find_thread = None
+
+    def _start_virtual_search(self):
+        """Kick off a background find_all for virtual mode."""
+        self._cancel_search()
+        self._search_generation += 1
+        gen = self._search_generation
+
+        self._match_label.setText("Searching\u2026")
+        self._match_label.setStyleSheet("")
+
+        self._find_thread = QThread()
+        self._find_worker = FindWorker(
+            self._editor.vdoc,
+            self._get_pattern(),
+            self._case_check.isChecked(),
+            self._regex_check.isChecked(),
+            gen,
+        )
+        self._find_worker.moveToThread(self._find_thread)
+        self._find_thread.started.connect(self._find_worker.run)
+        self._find_worker.finished.connect(self._on_find_finished)
+        self._find_worker.finished.connect(self._find_thread.quit)
+        self._find_thread.start()
+
+    def _on_find_finished(self, matches, generation):
+        """Handle results arriving from the background search."""
+        if generation != self._search_generation:
+            return
+        self._cached_virtual_matches = matches
+        self._match_count = len(matches)
+        if self._match_count == 0:
+            self._match_label.setText("No results")
+            self._match_label.setStyleSheet("color: #CC0000;")
+            self._current_match = 0
+        else:
+            self._current_match = 1
+            self._match_label.setText(f"1 of {self._match_count}")
+            self._match_label.setStyleSheet("")
+            self.find_next(wrap=True, from_start=True)
 
     def _build_find_flags(self):
         flags = QTextDocument.FindFlag(0)
@@ -120,12 +208,21 @@ class FindReplaceBar(QWidget):
         return self._find_input.text()
 
     def _on_search_changed(self):
-        self._update_match_count()
         pattern = self._get_pattern()
-        if pattern:
-            self.find_next(wrap=True, from_start=True)
-        else:
+        if not pattern:
+            self._cancel_search()
+            self._cached_virtual_matches = []
+            self._match_count = 0
+            self._current_match = 0
+            self._match_label.setText("")
             self._clear_highlights()
+            return
+
+        if self._editor.virtual_mode and self._editor.vdoc:
+            self._start_virtual_search()
+        else:
+            self._update_match_count()
+            self.find_next(wrap=True, from_start=True)
 
     def _find_all_matches(self):
         """Return a list of (start, end) positions for all matches.
@@ -138,11 +235,7 @@ class FindReplaceBar(QWidget):
             return []
 
         if self._editor.virtual_mode and self._editor.vdoc:
-            return self._editor.vdoc.find_all(
-                pattern,
-                case_sensitive=self._case_check.isChecked(),
-                use_regex=self._regex_check.isChecked(),
-            )
+            return self._cached_virtual_matches
 
         text = self._editor.toPlainText()
         matches = []
@@ -482,6 +575,7 @@ class FindReplaceBar(QWidget):
 
     def _replace_all_virtual(self):
         """Replace all occurrences in virtual mode via VirtualDocument."""
+        self._cancel_search()
         pattern = self._get_pattern()
         replacement = self._replace_input.text()
         vdoc = self._editor.vdoc
@@ -493,12 +587,20 @@ class FindReplaceBar(QWidget):
         )
 
         if count > 0:
-            # Reload the current chunk to reflect changes
+            # Prevent _load_chunk from saving the stale (pre-replace) chunk
+            # text back into vdoc, which would overwrite the replacements
+            # for lines currently visible in the editor.
+            self._editor._chunk_line_count = 0
             self._editor._load_chunk(
                 self._editor._chunk_start,
                 0,
             )
-            self._update_match_count()
+            self._cached_virtual_matches = []
+            self._match_count = 0
+            self._current_match = 0
+            self._match_label.setText(f"{count} replaced")
+            self._match_label.setStyleSheet("")
+            self._clear_highlights()
 
         return count
 
@@ -512,6 +614,7 @@ class FindReplaceBar(QWidget):
         self._find_input.selectAll()
 
     def hide_bar(self):
+        self._cancel_search()
         self.setVisible(False)
         self._clear_highlights()
         self._editor.setFocus()
