@@ -65,6 +65,7 @@ class CodeEditor(QPlainTextEdit):
         self._virtual_scrollbar = None
         self._loading_chunk = False
         self._cached_ln_width = -1
+        self._on_load_complete = None
 
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
@@ -78,6 +79,9 @@ class CodeEditor(QPlainTextEdit):
     def set_highlighter(self, highlighter):
         """Store reference to the syntax highlighter for bulk-op optimization."""
         self._highlighter = highlighter
+        # Cancel any pending deferred reattachment of a stale highlighter
+        if hasattr(self, '_deferred_hl'):
+            self._deferred_hl = None
 
     def undo(self):
         if self._pending_insert_text:
@@ -368,8 +372,14 @@ class CodeEditor(QPlainTextEdit):
                 hl.setDocument(self.document())
                 hl._suppress_rehighlight = False
                 self._deferred_hl = None
+                # Clear batch limit after initial paint so scrolling highlights work
+                QTimer.singleShot(0, lambda: hl.set_batch_limit(-1))
             # Re-enable widget updates (disabled in setPlainText)
             self.setUpdatesEnabled(True)
+            if self._on_load_complete:
+                cb = self._on_load_complete
+                self._on_load_complete = None
+                cb()
 
     def cut(self):
         """Cut selected text with undo support."""
@@ -524,9 +534,10 @@ class CodeEditor(QPlainTextEdit):
         self._loading_chunk = False
 
         if hl:
-            hl.set_batch_limit(100)
+            hl.set_batch_limit(-1)
             hl._batch_count = 0
             hl.set_enabled(True)
+            hl.rehighlight()
 
         self._undo_stack.clear()
 
@@ -559,12 +570,7 @@ class CodeEditor(QPlainTextEdit):
         if self._chunk_start + margin <= value <= chunk_end - margin - self._visible_line_count():
             # Still within chunk, just scroll internally
             local_line = value - self._chunk_start
-            block = self.document().findBlockByNumber(local_line)
-            if block.isValid():
-                self.verticalScrollBar().setValue(
-                    int(self.blockBoundingGeometry(block).translated(
-                        self.contentOffset()).top())
-                )
+            self.verticalScrollBar().setValue(local_line)
             return
 
         # Need to load a new chunk

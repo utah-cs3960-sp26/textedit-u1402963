@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         self._actions = {}
         self._shortcuts = {}
         self._vdoc = None
+        self._suppress_modified = False
 
         self._setup_central_widget()
         self._init_settings()
@@ -343,6 +344,10 @@ class MainWindow(QMainWindow):
             self._apply_settings(self._settings)
 
     def _mark_modified(self):
+        if self._suppress_modified:
+            return
+        if self.text_edit.virtual_mode:
+            return
         current_content = self.text_edit.toPlainText()
         self._document.current_content = current_content
         self._update_status()
@@ -385,8 +390,15 @@ class MainWindow(QMainWindow):
         else:
             return "cancel"
 
+    def _has_unsaved_changes(self):
+        """Check if the document has unsaved changes, handling virtual mode."""
+        if self._vdoc:
+            self.text_edit._save_chunk_edits()
+            return self._vdoc.is_modified
+        return self._document.is_modified
+
     def closeEvent(self, event: QCloseEvent):
-        if self._document.is_modified:
+        if self._has_unsaved_changes():
             result = self._prompt_save_changes()
             if result == "save":
                 self.save_file()
@@ -399,7 +411,7 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def new_file(self):
-        if self._document.is_modified:
+        if self._has_unsaved_changes():
             result = self._prompt_save_changes()
             if result == "save":
                 self.save_file()
@@ -408,6 +420,7 @@ class MainWindow(QMainWindow):
             elif result == "cancel":
                 return
 
+        self._suppress_modified = True
         self._close_virtual_doc()
 
         root_folder = self.sidebar.get_root_folder()
@@ -423,19 +436,24 @@ class MainWindow(QMainWindow):
                     self._document.file_path = file_path
                     self._document.set_content("", mark_as_saved=True)
                     self._setup_highlighter(file_path)
+                    self._suppress_modified = False
                     self._update_status()
                     self.sidebar.file_tree.highlight_file(file_path)
                 except OSError as e:
+                    self._suppress_modified = False
                     QMessageBox.critical(self, "Error", f"Could not create file: {e}")
+            else:
+                self._suppress_modified = False
             return
 
         self.text_edit.clear()
         self._document.reset()
         self._setup_highlighter()
+        self._suppress_modified = False
         self._update_status()
 
     def open_file(self):
-        if self._document.is_modified:
+        if self._has_unsaved_changes():
             result = self._prompt_save_changes()
             if result == "save":
                 self.save_file()
@@ -463,23 +481,42 @@ class MainWindow(QMainWindow):
 
     def _open_file_path(self, file_path: str, highlight_in_tree: bool = False):
         """Open a file, using virtual mode for large files."""
+        self._suppress_modified = True
         # Close any previous virtual document
         self._close_virtual_doc()
 
         if VirtualDocument.is_large_file(file_path):
             self._open_large_file(file_path)
+            self._suppress_modified = False
+            self._update_status()
         else:
             success, content, error_msg = self._controller.open_file(file_path)
             if success:
                 self.text_edit.setPlainText(content)
-                self._update_status()
                 self._setup_highlighter(file_path, content)
+                if getattr(self.text_edit, '_deferred_lines', None) is not None:
+                    # Deferred loading in progress — re-sync when done
+                    self.text_edit._on_load_complete = self._on_file_load_complete
+                else:
+                    self._sync_document_after_load()
             else:
+                self._suppress_modified = False
                 QMessageBox.critical(self, "Error", error_msg)
                 return
 
         if highlight_in_tree:
             self.sidebar.highlight_file(file_path)
+
+    def _sync_document_after_load(self):
+        """Re-sync document model with actual editor content and update status."""
+        actual = self.text_edit.toPlainText()
+        self._document.set_content(actual, mark_as_saved=True)
+        self._suppress_modified = False
+        self._update_status()
+
+    def _on_file_load_complete(self):
+        """Callback when deferred chunk loading finishes."""
+        self._sync_document_after_load()
 
     def _open_large_file(self, file_path: str):
         """Open a large file using mmap-backed virtual document."""
@@ -504,7 +541,7 @@ class MainWindow(QMainWindow):
         chunk_text = self.text_edit.toPlainText()
         self._setup_highlighter(file_path, chunk_text)
         if self.highlighter:
-            self.highlighter.set_batch_limit(100)
+            self.highlighter.set_batch_limit(-1)
 
     def _close_virtual_doc(self):
         """Clean up any active virtual document."""
@@ -527,7 +564,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_opened_from_tree(self, file_path: str):
         """Handle file opened from sidebar tree."""
-        if self._document.is_modified:
+        if self._has_unsaved_changes():
             result = self._prompt_save_changes()
             if result == "save":
                 self.save_file()
