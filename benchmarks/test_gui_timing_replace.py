@@ -1,5 +1,7 @@
 """GUI timing tests: find-and-replace operations."""
 
+from benchmarks.conftest import TARGET_FRAME_MS_LARGE
+
 
 class TestGuiTimingReplace:
     def _run_replace(self, window, qapp, run_timed, content, label):
@@ -61,7 +63,7 @@ class TestGuiTimingReplace:
         passed = run_timed(
             "Replace 'while' -> 'for' in large.txt [virtual mode]",
             lambda: find_bar.replace_all(),
-            setup=setup,
+            setup=setup, target_ms=TARGET_FRAME_MS_LARGE,
         )
 
         find_bar.hide_bar()

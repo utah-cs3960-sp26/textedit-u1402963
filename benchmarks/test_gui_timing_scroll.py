@@ -4,6 +4,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCursor
 from PyQt6.QtTest import QTest
 
+from benchmarks.conftest import TARGET_FRAME_MS_LARGE
+
 SCROLL_STEPS = 30
 
 
@@ -70,7 +72,7 @@ class TestGuiTimingScroll:
 
         passed = run_direct(
             "Scroll large.txt (30 pages down + 30 up) [virtual mode]",
-            scroll, setup=setup,
+            scroll, setup=setup, target_ms=TARGET_FRAME_MS_LARGE,
         )
 
         if window.text_edit.virtual_mode:

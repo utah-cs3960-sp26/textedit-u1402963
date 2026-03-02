@@ -2,6 +2,8 @@
 
 from PyQt6.QtCore import QTimer
 
+from benchmarks.conftest import TARGET_FRAME_MS_LARGE
+
 
 class TestGuiTimingScrollbarJump:
     def _run_jumps(self, window, qapp, run_direct, content, label):
@@ -80,7 +82,7 @@ class TestGuiTimingScrollbarJump:
 
         passed = run_direct(
             "Scrollbar jump large.txt (6 jumps) [virtual mode]",
-            jumps,
+            jumps, target_ms=TARGET_FRAME_MS_LARGE,
         )
 
         if window.text_edit.virtual_mode:

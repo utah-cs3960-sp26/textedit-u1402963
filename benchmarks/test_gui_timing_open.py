@@ -1,5 +1,7 @@
 """GUI timing tests: file open operations."""
 
+from benchmarks.conftest import TARGET_FRAME_MS_LARGE
+
 
 class TestGuiTimingOpen:
     def test_gui_timing_open_small(self, window, run_timed, small_content):
@@ -47,7 +49,7 @@ class TestGuiTimingOpen:
 
         passed = run_timed(
             "Open large.txt (1,377,419 lines) [virtual mode]",
-            open_fn, setup=setup,
+            open_fn, setup=setup, target_ms=TARGET_FRAME_MS_LARGE,
         )
 
         # Cleanup

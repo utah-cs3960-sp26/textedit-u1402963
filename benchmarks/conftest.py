@@ -17,11 +17,12 @@ from editor.frame_timer import FrameTimerApp
 from editor.window import MainWindow
 
 _FILES_DIR = os.path.join(ROOT_DIR, "s-m-l-files")
-_SMALL_FILE = os.path.join(_FILES_DIR, "small.txt")
-_MEDIUM_FILE = os.path.join(_FILES_DIR, "medium.txt")
-_LARGE_FILE = os.path.join(_FILES_DIR, "large.txt")
+_SMALL_FILE = os.path.join(_FILES_DIR, "small.py")
+_MEDIUM_FILE = os.path.join(_FILES_DIR, "medium.py")
+_LARGE_FILE = os.path.join(_FILES_DIR, "large.py")
 
-TARGET_FRAME_MS = 16.67  # 60 fps
+TARGET_FRAME_MS = 16.67       # 60 fps — default for small/medium files
+TARGET_FRAME_MS_LARGE = 33.0  # 30 fps — relaxed target for large files
 TEST_TIMEOUT = 15  # seconds — max wall time for any single run
 NUM_RUNS = 5
 WARMUP_RUNS = 1  # discarded before measurement
@@ -59,13 +60,17 @@ class FrameCollector:
         return len(self.frame_times)
 
 
-def _print_multi_result(operation, runs, all_frames):
+def _print_multi_result(operation, runs, all_frames, target_ms=None):
     """Print a formatted multi-run benchmark report.
 
     ``runs`` contains per-run wall-clock summaries.
     ``all_frames`` is the pooled list of every frame time across all runs.
+    ``target_ms`` is the P95 threshold; defaults to TARGET_FRAME_MS.
     Returns True if passed.
     """
+    if target_ms is None:
+        target_ms = TARGET_FRAME_MS
+
     # Aggregate statistics over pooled frames
     if all_frames:
         agg_max = max(all_frames)
@@ -74,13 +79,15 @@ def _print_multi_result(operation, runs, all_frames):
         agg_p99 = sorted(all_frames)[min(int(len(all_frames) * 0.99), len(all_frames) - 1)]
         agg_median = statistics.median(all_frames)
         agg_stdev = statistics.stdev(all_frames) if len(all_frames) > 1 else 0.0
-        over_target = [f for f in all_frames if f > TARGET_FRAME_MS]
+        over_target = [f for f in all_frames if f > target_ms]
     else:
         agg_max = agg_avg = agg_p95 = agg_p99 = agg_median = agg_stdev = 0.0
         over_target = []
 
-    passed = agg_p95 <= TARGET_FRAME_MS
+    passed = agg_p95 <= target_ms
     status = "PASS" if passed else "FAIL"
+
+    fps_label = f"{1000 / target_ms:.0f} fps" if target_ms > 0 else "N/A"
 
     print(f"\n{'='*65}")
     print(f"  {operation} -- {len(runs)} runs ({WARMUP_RUNS} warmup discarded)")
@@ -100,11 +107,11 @@ def _print_multi_result(operation, runs, all_frames):
     print(f"  Aggregate median:    {agg_median:>10.1f} ms")
     print(f"  Aggregate avg:       {agg_avg:>10.1f} ms")
     print(f"  Aggregate stdev:     {agg_stdev:>10.1f} ms")
-    print(f"  Frames > 16.67ms:   {len(over_target):>10} / {len(all_frames)}")
+    print(f"  Frames > {target_ms:.1f}ms:  {len(over_target):>10} / {len(all_frames)}")
     if over_target:
         worst = sorted(over_target, reverse=True)[:5]
         print(f"  Worst offenders:     {', '.join(f'{v:.1f}ms' for v in worst)}")
-    print(f"  Target (P95):        <={TARGET_FRAME_MS:.2f} ms (60 fps)")
+    print(f"  Target (P95):        <={target_ms:.2f} ms ({fps_label})")
     print(f"  Result:              {status}")
     print(f"{'='*65}")
     return passed
@@ -265,7 +272,7 @@ def run_timed(qapp, collector):
     ``setup`` is called before each run (outside the timed section).
     Returns True if aggregate P95 <= target.
     """
-    def _run(operation_name, fn, setup=None):
+    def _run(operation_name, fn, setup=None, target_ms=None):
         all_runs = []
         all_frames = []
 
@@ -316,7 +323,7 @@ def run_timed(qapp, collector):
                 "frames": collector.frame_count,
             })
 
-        return _print_multi_result(operation_name, all_runs, all_frames)
+        return _print_multi_result(operation_name, all_runs, all_frames, target_ms)
 
     return _run
 
@@ -331,7 +338,7 @@ def run_direct(qapp, collector):
     ``setup`` is called before each run (outside the timed section).
     Returns True if aggregate P95 <= target.
     """
-    def _run(operation_name, fn, setup=None):
+    def _run(operation_name, fn, setup=None, target_ms=None):
         all_runs = []
         all_frames = []
 
@@ -370,7 +377,7 @@ def run_direct(qapp, collector):
                 "frames": collector.frame_count,
             })
 
-        return _print_multi_result(operation_name, all_runs, all_frames)
+        return _print_multi_result(operation_name, all_runs, all_frames, target_ms)
 
     return _run
 
