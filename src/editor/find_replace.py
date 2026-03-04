@@ -47,6 +47,64 @@ class FindWorker(QObject):
             self.finished.emit(results, self._generation)
 
 
+class ReplaceWorker(QObject):
+    """Runs replace-all on a background thread for virtual documents.
+
+    Builds a replacement dict independently, then emits it on completion
+    so the main thread can swap it in — no locks needed.
+    """
+
+    finished = pyqtSignal(dict, int)  # (modified_lines_dict, replacement_count)
+
+    def __init__(self, vdoc, pattern, replacement, case_sensitive, use_regex):
+        super().__init__()
+        self._vdoc = vdoc
+        self._pattern = pattern
+        self._replacement = replacement
+        self._case_sensitive = case_sensitive
+        self._use_regex = use_regex
+        self._abort = threading.Event()
+
+    def abort(self):
+        self._abort.set()
+
+    def run(self):
+        modifications = {}
+        count = 0
+        pattern = self._pattern
+        replacement = self._replacement
+
+        if self._use_regex:
+            flags = 0 if self._case_sensitive else re.IGNORECASE
+            try:
+                compiled = re.compile(pattern, flags)
+            except re.error:
+                self.finished.emit({}, 0)
+                return
+        elif not self._case_sensitive:
+            compiled = re.compile(re.escape(pattern), re.IGNORECASE)
+        else:
+            compiled = None
+
+        for line_no in range(self._vdoc.line_count):
+            if self._abort.is_set():
+                return
+            line_text = self._vdoc.get_line(line_no)
+
+            if compiled:
+                new_text, n = compiled.subn(replacement, line_text)
+            else:
+                n = line_text.count(pattern)
+                new_text = line_text.replace(pattern, replacement)
+
+            if n > 0:
+                modifications[line_no] = new_text
+                count += n
+
+        if not self._abort.is_set():
+            self.finished.emit(modifications, count)
+
+
 class FindReplaceBar(QWidget):
     """A compact find-and-replace bar that sits below the editor."""
 
@@ -62,6 +120,8 @@ class FindReplaceBar(QWidget):
         self._search_generation = 0
         self._find_thread = None
         self._find_worker = None
+        self._replace_thread = None
+        self._replace_worker = None
         self._cached_virtual_matches = []
         self.setVisible(False)
         self._setup_ui()
@@ -146,7 +206,7 @@ class FindReplaceBar(QWidget):
         self._debounce_timer.start()
 
     def _cancel_search(self):
-        """Cancel any running background search."""
+        """Cancel any running background search or replace."""
         if self._find_worker:
             self._find_worker.abort()
             try:
@@ -158,6 +218,7 @@ class FindReplaceBar(QWidget):
             self._find_thread.wait(2000)
         self._find_worker = None
         self._find_thread = None
+        self._cancel_replace()
 
     def _start_virtual_search(self):
         """Kick off a background find_all for virtual mode."""
@@ -574,36 +635,64 @@ class FindReplaceBar(QWidget):
 
         return count
 
+    def _cancel_replace(self):
+        """Cancel any running background replace."""
+        if self._replace_worker:
+            self._replace_worker.abort()
+            try:
+                self._replace_worker.finished.disconnect(self._on_replace_finished)
+            except TypeError:
+                pass
+        if self._replace_thread and self._replace_thread.isRunning():
+            self._replace_thread.quit()
+            self._replace_thread.wait(2000)
+        self._replace_worker = None
+        self._replace_thread = None
+
     def _replace_all_virtual(self):
-        """Replace all occurrences in virtual mode via VirtualDocument."""
+        """Replace all occurrences in virtual mode via background thread."""
         self._cancel_search()
+        self._cancel_replace()
         pattern = self._get_pattern()
         replacement = self._replace_input.text()
         vdoc = self._editor.vdoc
 
-        count = vdoc.replace_all(
-            pattern, replacement,
-            case_sensitive=self._case_check.isChecked(),
-            use_regex=self._regex_check.isChecked(),
-        )
+        self._match_label.setText("Replacing\u2026")
+        self._match_label.setStyleSheet("")
 
+        self._replace_thread = QThread()
+        self._replace_worker = ReplaceWorker(
+            vdoc, pattern, replacement,
+            self._case_check.isChecked(),
+            self._regex_check.isChecked(),
+        )
+        self._replace_worker.moveToThread(self._replace_thread)
+        self._replace_thread.started.connect(self._replace_worker.run)
+        self._replace_worker.finished.connect(self._on_replace_finished)
+        self._replace_worker.finished.connect(self._replace_thread.quit)
+        self._replace_thread.start()
+
+        return 0  # actual count delivered via _on_replace_finished
+
+    def _on_replace_finished(self, modifications, count):
+        """Handle results from the background replace worker."""
         if count > 0:
-            # Prevent _load_chunk from saving the stale (pre-replace) chunk
-            # text back into vdoc, which would overwrite the replacements
-            # for lines currently visible in the editor.
+            vdoc = self._editor.vdoc
+            if vdoc:
+                vdoc._modified_lines.update(modifications)
+
             self._editor._chunk_line_count = 0
             self._editor._load_chunk(
                 self._editor._chunk_start,
                 0,
             )
-            self._cached_virtual_matches = []
-            self._match_count = 0
-            self._current_match = 0
-            self._match_label.setText(f"{count} replaced")
-            self._match_label.setStyleSheet("")
-            self._clear_highlights()
 
-        return count
+        self._cached_virtual_matches = []
+        self._match_count = 0
+        self._current_match = 0
+        self._match_label.setText(f"{count} replaced")
+        self._match_label.setStyleSheet("")
+        self._clear_highlights()
 
     def show_bar(self, replace_visible=True):
         """Show the find bar, optionally with the replace row."""
