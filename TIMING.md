@@ -31,45 +31,23 @@
 - L: not tested
 
 
-## Post Optimization Timing
+## Best Optimized Run — commit `850b316`
 
-### The maximum frame time when you open small/medium/large.
+### Open
+- S: P95=10.0ms ✅ | M: P95=3.7ms ✅ | L: P95=38.0ms ❌
 
-- S: P95=11.9ms, 12.9ms, 8.8ms, 9.1ms, 9.3ms (aggregate P95: 9.1ms) ✅ PASS
-- M: P95=6.3ms, 7.4ms, 7.2ms, 6.5ms, 6.5ms (aggregate P95: 6.5ms) ✅ PASS
-- L: P95=23.0ms, 23.1ms, 18.9ms, 17.4ms, 16.8ms (aggregate P95: 20.4ms) ❌ FAIL
+### Scroll
+- S: P95=10.7ms ✅ | M: P95=17.0ms ❌ | L: skipped
 
-### The maximum frame time as you scroll up and down.
+### Scrollbar Jump
+- S: P95=17.2ms ❌ | M: P95=14.1ms ✅ | L: skipped
 
-- S: P95=7.0ms, 8.0ms, 7.9ms, 7.8ms, 9.6ms (aggregate P95: 8.0ms) ✅ PASS
-- M: P95=16.8ms, 9.8ms, 16.1ms, 11.6ms, 11.3ms (aggregate P95: 14.0ms) ✅ PASS
-- L: P95=13.0ms, 12.3ms, 13.1ms, 12.7ms, 13.2ms (aggregate P95: 12.8ms) ✅ PASS
+### Replace "while" → "for"
+- S: P95=7.9ms ✅ | M: P95=4.8ms ✅ | L: P95=7777ms ❌
 
-### The maximum and average frame times when you click far away from the current location in the scroll bar.
+### Memory
+- S: +4.5 MB ✅ | M: +1.0 MB ✅ | L: +311.7 MB ✅
 
-- S: P95=12.4ms, 12.3ms, 14.6ms, 16.8ms, 11.3ms (aggregate P95: 13.3ms, avg: 2.3ms) ✅ PASS
-- M: P95=15.7ms, 9.3ms, 8.9ms, 9.8ms, 9.7ms (aggregate P95: 9.7ms, avg: 1.9ms) ✅ PASS
-- L: P95=18.2ms, 16.7ms, 18.6ms, 16.3ms, 16.6ms (aggregate P95: 17.0ms, avg: 3.7ms) ❌ FAIL
-
-### The maximum frame time if you try to replace "while" with "for".
-
-- S: P95=9.8ms, 9.0ms, 9.9ms, 8.7ms, 7.3ms (aggregate P95: 8.7ms) ✅ PASS
-- M: P95=12.1ms, 10.4ms, 9.3ms, 9.9ms, 10.3ms (aggregate P95: 10.3ms) ✅ PASS
-- L: P95=6783.5ms, 6830.2ms, 6775.7ms, 6783.0ms, 6767.2ms (aggregate P95: 6783.0ms) ❌ FAIL
-
-### The total memory used by your text editor process.
-
-- S: baseline 140.1 MB, after 144.9 MB, delta +4.7 MB ✅ PASS
-- M: baseline 162.0 MB, after 163.2 MB, delta +1.2 MB ✅ PASS
-- L: baseline 180.5 MB, after 493.1 MB, delta +312.7 MB (limit 3072 MB) ✅ PASS
-
-### Summary
-
-**Targets:** P95 ≤ 16.67ms (60fps) for small/medium, P95 ≤ 33ms (30fps) for large files.
-
-- **14 / 15 tests passed**, 1 failed (large file replace)
-- Small and medium file benchmarks all pass comfortably
-- Large file open (P95: 20.4ms) and scrollbar jump (P95: 17.0ms) now pass under relaxed 33ms target
-- Large file scroll passes easily (P95: 12.8ms)
-- Large file replace (P95: 6783ms) still fails — this is a genuine performance issue
+### Summary: 9 passed, 4 failed, 2 skipped
+See ISSUES.md for remaining failures and fix strategies.
 
