@@ -175,23 +175,6 @@ def get_rss_mb():
 # benchmark is automatically skipped.
 # ---------------------------------------------------------------------------
 
-_sm_test_failed = False  # module-level flag set by the hook below
-
-
-def pytest_runtest_makereport(item, call):
-    """After each test's call phase, check if a non-large test failed."""
-    global _sm_test_failed
-    if call.when == "call" and call.excinfo is not None:
-        if "large" not in item.nodeid:
-            _sm_test_failed = True
-
-
-@pytest.fixture(autouse=False)
-def require_small_medium_pass():
-    """Skip this test if any earlier small/medium benchmark failed."""
-    if _sm_test_failed:
-        pytest.skip("Skipped: a small or medium benchmark failed")
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

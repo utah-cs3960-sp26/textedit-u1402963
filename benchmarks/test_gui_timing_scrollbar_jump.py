@@ -48,7 +48,7 @@ class TestGuiTimingScrollbarJump:
         assert passed, "Avg P95 frame time exceeds 60 fps target"
 
     def test_gui_timing_scrollbar_jump_large(
-        self, window, qapp, run_direct, large_file_path, require_small_medium_pass
+        self, window, qapp, run_direct, large_file_path
     ):
         from editor.models.virtual_document import VirtualDocument
 

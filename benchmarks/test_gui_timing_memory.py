@@ -42,7 +42,7 @@ class TestGuiTimingMemory:
         )
 
     def test_gui_timing_memory_large(
-        self, window, qapp, measure_memory, large_file_path, require_small_medium_pass
+        self, window, qapp, measure_memory, large_file_path
     ):
         from editor.models.virtual_document import VirtualDocument
 

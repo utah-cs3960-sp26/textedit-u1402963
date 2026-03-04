@@ -43,7 +43,7 @@ class TestGuiTimingScroll:
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
 
-    def test_gui_timing_scroll_large(self, window, qapp, run_direct, large_file_path, require_small_medium_pass):
+    def test_gui_timing_scroll_large(self, window, qapp, run_direct, large_file_path):
         from editor.models.virtual_document import VirtualDocument
 
         shared_vdoc = VirtualDocument(large_file_path)

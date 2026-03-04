@@ -18,7 +18,7 @@ class TestGuiTimingOpen:
         )
         assert passed, "Avg P95 frame time exceeds 60 fps target"
 
-    def test_gui_timing_open_large(self, window, qapp, run_timed, large_file_path, require_small_medium_pass):
+    def test_gui_timing_open_large(self, window, qapp, run_timed, large_file_path):
         from editor.models.virtual_document import VirtualDocument
 
         # Pre-build VirtualDocument (line index) once — O(filesize) cost
