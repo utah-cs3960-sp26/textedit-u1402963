@@ -31,23 +31,23 @@
 - L: not tested
 
 
-## Best Optimized Run — commit `850b316`
+## Best Optimized Run — commit `7388dcd`
 
 ### Open
-- S: P95=10.0ms ✅ | M: P95=3.7ms ✅ | L: P95=38.0ms ❌
+- S: P95=10.6ms ✅ | M: P95=5.2ms ✅ | L: P95=26.9ms ✅
 
 ### Scroll
-- S: P95=10.7ms ✅ | M: P95=17.0ms ❌ | L: skipped
+- S: P95=10.4ms ✅ | M: P95=19.7ms ❌ | L: P95=16.7ms ✅
 
 ### Scrollbar Jump
-- S: P95=17.2ms ❌ | M: P95=14.1ms ✅ | L: skipped
+- S: P95=17.9ms ❌ | M: P95=18.0ms ❌ | L: P95=97.6ms ❌
 
 ### Replace "while" → "for"
-- S: P95=7.9ms ✅ | M: P95=4.8ms ✅ | L: P95=7777ms ❌
+- S: P95=10.4ms ✅ | M: P95=8.1ms ✅ | L: timed out ❌
 
 ### Memory
-- S: +4.5 MB ✅ | M: +1.0 MB ✅ | L: +311.7 MB ✅
+- S: +6.0 MB ✅ | M: +1.2 MB ✅ | L: +311.9 MB ✅
 
-### Summary: 9 passed, 4 failed, 2 skipped
+### Summary: 10 passed, 5 failed (all tests run, no gating)
 See ISSUES.md for remaining failures and fix strategies.
 
