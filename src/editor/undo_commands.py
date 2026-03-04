@@ -103,3 +103,26 @@ class ReplaceTextCommand(TextEditCommand):
         cursor.setPosition(self._start + _utf16_len(self._new_text), QTextCursor.MoveMode.KeepAnchor)
         cursor.insertText(self._old_text)
         self._editor.setTextCursor(cursor)
+
+
+class BulkReplaceCommand(TextEditCommand):
+    """Undo command for replace-all that uses bulk_set_text for speed.
+
+    Unlike ReplaceTextCommand (which uses cursor operations and triggers
+    per-block relayout), this command uses the editor's bulk_set_text()
+    method which detaches the highlighter and loads text efficiently.
+    """
+
+    def __init__(self, editor, old_text: str, new_text: str):
+        super().__init__(editor, "Replace All")
+        self._old_text = old_text
+        self._new_text = new_text
+
+    def redo(self):
+        if self._first_redo:
+            self._first_redo = False
+            return
+        self._editor.bulk_set_text(self._new_text)
+
+    def undo(self):
+        self._editor.bulk_set_text(self._old_text)

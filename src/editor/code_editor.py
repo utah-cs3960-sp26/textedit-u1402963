@@ -112,6 +112,8 @@ class CodeEditor(QPlainTextEdit):
         digits = 1
         if self._virtual_mode and self._vdoc:
             max_block = max(1, self._vdoc.line_count)
+        elif hasattr(self, '_deferred_lines') and self._deferred_lines is not None:
+            max_block = max(1, len(self._deferred_lines))
         else:
             max_block = max(1, self.blockCount())
         while max_block >= 10:
@@ -302,6 +304,32 @@ class CodeEditor(QPlainTextEdit):
         self._undo_stack.clear()
         super().clear()
 
+    def bulk_set_text(self, text: str):
+        """Replace document contents without clearing the undo stack.
+
+        Used by BulkReplaceCommand for fast undo/redo of replace-all.
+        Detaches the highlighter, swaps text via the fast setPlainText
+        path, then reattaches.
+        """
+        self._flush_pending_insert()
+        self._deferred_lines = None
+
+        hl = self._highlighter
+        if hl:
+            hl.setDocument(None)
+
+        self.blockSignals(True)
+        super().setPlainText(text)
+        self.blockSignals(False)
+
+        self._cached_ln_width = -1
+        self._update_line_number_area_width(0)
+
+        if hl:
+            hl._suppress_rehighlight = True
+            hl.setDocument(self.document())
+            hl._suppress_rehighlight = False
+
     _LOAD_CHUNK_SIZE = 500
 
     def setPlainText(self, text: str):
@@ -333,11 +361,12 @@ class CodeEditor(QPlainTextEdit):
             first_chunk = '\n'.join(lines[:self._LOAD_CHUNK_SIZE])
             super().setPlainText(first_chunk)
             self.blockSignals(False)
-            self._cached_ln_width = -1
-            self._update_line_number_area_width(0)
-            # Queue remaining chunks — highlighter stays detached until done
+            # Set deferred state before cache invalidation so
+            # _compute_line_number_area_width uses the total line count.
             self._deferred_lines = lines
             self._deferred_offset = self._LOAD_CHUNK_SIZE
+            self._cached_ln_width = -1
+            self._update_line_number_area_width(0)
             self._deferred_hl = hl
             QTimer.singleShot(0, self._load_next_chunk)
 

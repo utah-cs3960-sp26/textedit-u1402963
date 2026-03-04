@@ -738,6 +738,9 @@ class TestPerformance:
         lines = [f"line {i} with some text and data value={i}" for i in range(100_000)]
         ed = CodeEditor()
         ed.setPlainText("\n".join(lines))
+        # Drain deferred chunk loading so the full document is available
+        while getattr(ed, '_deferred_lines', None) is not None:
+            qapp.processEvents()
         return ed
 
     def test_find_all_matches_large_file(self, large_editor, qapp):

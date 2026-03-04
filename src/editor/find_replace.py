@@ -16,7 +16,7 @@ from PyQt6.QtCore import Qt, QTimer, QThread, QObject, pyqtSignal
 from PyQt6.QtGui import QTextDocument, QTextCursor, QColor, QTextCharFormat
 from PyQt6.QtWidgets import QTextEdit
 
-from editor.undo_commands import ReplaceTextCommand
+from editor.undo_commands import ReplaceTextCommand, BulkReplaceCommand
 
 
 class FindWorker(QObject):
@@ -563,9 +563,10 @@ class FindReplaceBar(QWidget):
 
         if count > 0:
             self._editor._flush_pending_insert()
-            # Use setPlainText for bulk replacement — avoids expensive
-            # cursor edit block overhead (full relayout + rehighlight).
-            self._editor.setPlainText(new_text)
+            self._editor.bulk_set_text(new_text)
+            cmd = BulkReplaceCommand(self._editor, text, new_text)
+            self._editor.undo_stack.push(cmd)
+
             self._match_count = 0
             self._current_match = 0
             self._match_label.setText("0 matches")
