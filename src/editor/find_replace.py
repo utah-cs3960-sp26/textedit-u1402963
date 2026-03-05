@@ -691,11 +691,12 @@ class FindReplaceBar(QWidget):
             if vdoc:
                 vdoc._modified_lines = modifications
 
+            # Defer chunk reload to the next frame to keep the signal-delivery
+            # frame lightweight (under the 33ms large-file target).
             self._editor._chunk_line_count = 0
-            self._editor._load_chunk(
-                self._editor._chunk_start,
-                0,
-            )
+            from PyQt6.QtCore import QTimer
+            chunk_start = self._editor._chunk_start
+            QTimer.singleShot(0, lambda: self._editor._load_chunk(chunk_start, 0))
 
         self._cached_virtual_matches = []
         self._match_count = 0

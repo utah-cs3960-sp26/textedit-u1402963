@@ -78,33 +78,39 @@ class VirtualDocument:
     def get_lines(self, start_line: int, count: int) -> str:
         """Get a range of lines as a single string joined by newlines."""
         end = min(start_line + count, self.line_count)
+        modified = self._modified_lines
 
         # Fast path: no modifications in range — read one contiguous mmap slice
-        if self._mmap and not any(
-            i in self._modified_lines for i in range(start_line, end)
-        ):
-            start_offset = self._line_offsets[start_line]
-            if end < self.line_count:
-                end_offset = self._line_offsets[end]
-            else:
-                end_offset = self._file_size
-            raw = self._mmap[start_offset:end_offset]
-            text = raw.decode(self._encoding, errors="replace")
-            # Strip trailing newline from the last line in the range
-            if text.endswith("\r\n"):
-                text = text[:-2]
-            elif text.endswith("\n"):
-                text = text[:-1]
-            # Normalize \r\n to \n within the range
-            if "\r\n" in text:
-                text = text.replace("\r\n", "\n")
-            return text
+        if self._mmap and not modified:
+            return self._read_mmap_range(start_line, end)
 
-        # Slow path: per-line reads for ranges with modifications
-        lines = []
-        for i in range(start_line, end):
-            lines.append(self.get_line(i))
+        if self._mmap and not any(
+            i in modified for i in range(start_line, end)
+        ):
+            return self._read_mmap_range(start_line, end)
+
+        # Path with modifications: direct dict access avoids get_line overhead
+        get_orig = self.get_line_original
+        lines = [modified[i] if i in modified else get_orig(i)
+                 for i in range(start_line, end)]
         return "\n".join(lines)
+
+    def _read_mmap_range(self, start_line: int, end: int) -> str:
+        """Read a contiguous range from mmap."""
+        start_offset = self._line_offsets[start_line]
+        if end < self.line_count:
+            end_offset = self._line_offsets[end]
+        else:
+            end_offset = self._file_size
+        raw = self._mmap[start_offset:end_offset]
+        text = raw.decode(self._encoding, errors="replace")
+        if text.endswith("\r\n"):
+            text = text[:-2]
+        elif text.endswith("\n"):
+            text = text[:-1]
+        if "\r\n" in text:
+            text = text.replace("\r\n", "\n")
+        return text
 
     def set_line(self, line_no: int, text: str):
         """Update a line's content (for edit tracking)."""

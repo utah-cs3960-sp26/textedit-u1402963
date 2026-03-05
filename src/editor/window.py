@@ -164,6 +164,17 @@ class MainWindow(QMainWindow):
         )
         self.text_edit.set_highlighter(self.highlighter)
 
+        # In virtual mode, use viewport highlighter instead of QSyntaxHighlighter
+        if self.text_edit.virtual_mode:
+            from editor.viewport_highlighter import ViewportHighlighter
+            lang = LanguageDetector.detect(file_path, content)
+            self.highlighter.set_enabled(False)
+            self.highlighter.setDocument(None)
+            self.text_edit._viewport_highlighter = ViewportHighlighter(
+                self.text_edit, lang
+            )
+            self.text_edit._viewport_highlighter.highlight_viewport()
+
     def _setup_menu(self):
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("&File")

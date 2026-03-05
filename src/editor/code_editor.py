@@ -66,6 +66,7 @@ class CodeEditor(QPlainTextEdit):
         self._loading_chunk = False
         self._cached_ln_width = -1
         self._on_load_complete = None
+        self._viewport_highlighter = None
 
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
@@ -488,6 +489,12 @@ class CodeEditor(QPlainTextEdit):
         scrollbar.valueChanged.connect(self._on_virtual_scroll)
         scrollbar.setVisible(True)
 
+        # Detach QSyntaxHighlighter — virtual mode uses ViewportHighlighter
+        hl = self._highlighter
+        if hl:
+            hl.set_enabled(False)
+            hl.setDocument(None)
+
         self._load_chunk(0)
         self._update_line_number_area_width(0)
 
@@ -502,6 +509,15 @@ class CodeEditor(QPlainTextEdit):
             except TypeError:
                 pass
             self._virtual_scrollbar.setVisible(False)
+        # Clean up viewport highlighter
+        self._viewport_highlighter = None
+        # Reattach QSyntaxHighlighter for normal mode
+        hl = self._highlighter
+        if hl:
+            hl.set_enabled(True)
+            hl._suppress_rehighlight = True
+            hl.setDocument(self.document())
+            hl._suppress_rehighlight = False
         self._virtual_mode = False
         self._vdoc = None
         self._chunk_start = 0
@@ -514,10 +530,19 @@ class CodeEditor(QPlainTextEdit):
             return 40
         return max(1, self.viewport().height() // self.fontMetrics().height())
 
+    _VIRTUAL_INITIAL_LINES = 500  # lines to load immediately per frame
+
     def _load_chunk(self, target_line: int, local_line: int = 0):
-        """Load a chunk of lines centered around target_line into the editor."""
+        """Load a chunk of lines centered around target_line into the editor.
+
+        Loads a small initial slice immediately for fast first-frame rendering,
+        then fills the rest of the chunk across subsequent event-loop ticks.
+        """
         if not self._vdoc:
             return
+
+        # Cancel any pending deferred chunk fill
+        self._deferred_chunk = None
 
         # Only save edits if a previous chunk was loaded
         if self._chunk_line_count > 0:
@@ -531,13 +556,9 @@ class CodeEditor(QPlainTextEdit):
         self._chunk_start = start
         self._chunk_line_count = end - start
 
-        text = self._vdoc.get_lines(start, self._chunk_line_count)
-
-        # Disable highlighter during bulk text replacement to avoid
-        # processing every block; re-enable with batch limit after.
-        hl = self._highlighter
-        if hl:
-            hl.set_enabled(False)
+        # Load only a small initial slice for the first frame
+        initial_count = min(self._VIRTUAL_INITIAL_LINES, self._chunk_line_count)
+        text = self._vdoc.get_lines(start, initial_count)
 
         self._loading_chunk = True
         self.blockSignals(True)
@@ -545,20 +566,10 @@ class CodeEditor(QPlainTextEdit):
         self.blockSignals(False)
         self._loading_chunk = False
 
-        if hl:
-            # Use batch limit so only viewport blocks get highlighted
-            # during rehighlight; Qt handles the rest on demand.
-            viewport_lines = self._visible_line_count() + 10
-            hl.set_batch_limit(viewport_lines)
-            hl._batch_count = 0
-            hl.set_enabled(True)
-            hl.rehighlight()
-            QTimer.singleShot(0, lambda: hl.set_batch_limit(-1))
-
         self._undo_stack.clear()
 
-        # Scroll to the desired local line within the chunk
-        target_local = max(0, min(local_line, self._chunk_line_count - 1))
+        # Scroll to the desired local line within the loaded range
+        target_local = max(0, min(local_line, initial_count - 1))
         block = self.document().findBlockByNumber(target_local)
         if block.isValid():
             cursor = QTextCursor(block)
@@ -567,6 +578,47 @@ class CodeEditor(QPlainTextEdit):
 
         self._update_line_number_area_width(0)
         self.line_number_area.update()
+
+        # Use viewport highlighter — no QSyntaxHighlighter cascade
+        if self._viewport_highlighter:
+            self._viewport_highlighter.clear_cache()
+            self._viewport_highlighter.highlight_viewport()
+
+        # Schedule deferred loading of the rest of the chunk
+        if initial_count < self._chunk_line_count:
+            self._deferred_chunk = {
+                'start': start,
+                'loaded': initial_count,
+                'total': self._chunk_line_count,
+            }
+            QTimer.singleShot(0, self._fill_chunk)
+
+    def _fill_chunk(self):
+        """Append the next batch of lines to the document (deferred)."""
+        dc = getattr(self, '_deferred_chunk', None)
+        if dc is None:
+            return
+
+        loaded = dc['loaded']
+        total = dc['total']
+        chunk_start = dc['start']
+        batch = min(self._VIRTUAL_INITIAL_LINES, total - loaded)
+
+        text = self._vdoc.get_lines(chunk_start + loaded, batch)
+
+        self._loading_chunk = True
+        self.blockSignals(True)
+        cursor = QTextCursor(self.document())
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText('\n' + text)
+        self.blockSignals(False)
+        self._loading_chunk = False
+
+        dc['loaded'] = loaded + batch
+        if dc['loaded'] < total:
+            QTimer.singleShot(0, self._fill_chunk)
+        else:
+            self._deferred_chunk = None
 
     def _save_chunk_edits(self):
         """Save any edits in the current chunk back to VirtualDocument."""
@@ -587,6 +639,9 @@ class CodeEditor(QPlainTextEdit):
             # Still within chunk, just scroll internally
             local_line = value - self._chunk_start
             self.verticalScrollBar().setValue(local_line)
+            # Re-highlight newly visible blocks
+            if self._viewport_highlighter:
+                self._viewport_highlighter.highlight_viewport()
             return
 
         # Need to load a new chunk

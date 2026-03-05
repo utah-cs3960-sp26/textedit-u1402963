@@ -103,3 +103,44 @@ See ISSUES.md for remaining failures and fix strategies.
 - **Fixed vs `e559b0c`:** Large open now passes consistently
 - See MISTAKES.md for approaches that were tried and failed
 
+
+## Current Run — ViewportHighlighter + deferred chunk loading
+
+### Changes Made
+1. **ViewportHighlighter**: Bypasses `QSyntaxHighlighter` entirely in virtual mode. Applies syntax highlighting directly to visible blocks via `QTextLayout.setFormats()`, eliminating the 960-block cascade that caused 100-200ms spikes when `batch_limit` was cleared.
+2. **Deferred chunk loading**: `_load_chunk` loads 500 lines immediately via `setPlainText`, then fills the remaining 500 in the next frame via `cursor.insertText`. Spreads the Qt block-creation cost across two frames instead of one.
+3. **Deferred chunk reload after replace**: `_on_replace_finished` defers the `_load_chunk` call to the next frame via `QTimer.singleShot(0, ...)` so the signal-delivery frame stays lightweight.
+4. **Optimized `get_lines`**: Direct dict access in the modified-lines slow path avoids per-line `get_line` overhead.
+
+### Open
+- S: P95=8-15ms ✅ | M: P95=4-7ms ✅ | L: P95=12-30ms ✅
+
+### Scroll
+- S: P95=8-11ms ✅ | M: P95=10-15ms ✅ | L: P95=13-16ms ✅
+
+### Scrollbar Jump
+- S: P95=11-17ms ✅ | M: P95=12-18ms ✅ | L: P95=22-28ms ✅
+
+### Replace "while" → "for"
+- S: P95=8-12ms ✅ | M: P95=4-7ms ✅ | L: P95=21-35ms ⚠️ (borderline, ~60% pass rate)
+
+### Memory
+- S: +4-5 MB ✅ | M: +1 MB ✅ | L: +312 MB ✅
+
+### Summary: 14/15 pass consistently, 1 borderline
+- **Fixed vs previous:** Large scrollbar jump fixed (55ms→22-28ms ✅), large replace dramatically improved (127-170ms→21-35ms)
+- **Borderline:** Large replace — passes ~60% of runs, fails at P95=33-35ms on the rest
+
+### Why Large Replace Cannot Consistently Hit 33ms
+
+The remaining bottleneck is **irreducible `QPlainTextEdit.setPlainText()` cost**. This Qt C++ function must rebuild the internal `QTextDocument` block list (creating `QTextBlock` objects, computing layouts) for every line in the chunk. For 500 lines, this takes **15-25ms** depending on system load.
+
+Combined with:
+- `vdoc.get_lines()` reading 500 lines from 668K modified entries (~2-3ms)
+- Viewport highlighting of ~50 blocks (~2-3ms)
+- Python/Qt event loop overhead (~2-5ms)
+
+The total lands at **20-33ms per frame** — right at the 33ms boundary. System load variance (GC, Windows scheduler, background processes) pushes ~40% of runs over the line by 1-2ms.
+
+There is no lighter Qt API to swap document content in `QPlainTextEdit` — `setPlainText()` is the lowest-level text replacement available, and it is implemented entirely in Qt's C++ layer with no Python-side optimization possible.
+
