@@ -51,3 +51,55 @@
 ### Summary: 10 passed, 5 failed (all tests run, no gating)
 See ISSUES.md for remaining failures and fix strategies.
 
+
+## Latest Run — commit `e559b0c`
+
+### Open
+- S: P95=12.3ms ✅ | M: P95=4.9ms ✅ | L: P95=37.2ms ❌
+
+### Scroll
+- S: P95=7.6ms ✅ | M: P95=10.6ms ✅ | L: P95=14.0ms ✅
+
+### Scrollbar Jump
+- S: P95=12.9ms ✅ | M: P95=12.1ms ✅ | L: P95=71.6ms ❌
+
+### Replace "while" → "for"
+- S: P95=10.0ms ✅ | M: P95=7.3ms ✅ | L: P95=127.5ms ❌
+
+### Memory
+- S: +4.2 MB ✅ | M: +1.2 MB ✅ | L: +311.8 MB ✅
+
+### Summary: 12 passed, 3 failed
+- **Failures:** Large file open (P95=37.2ms), large scrollbar jump (P95=71.6ms), large replace (P95=127.5ms)
+- **Improvements vs previous run:** Scroll medium fixed (19.7ms→10.6ms ✅), scrollbar jump small fixed (17.9ms→12.9ms ✅), scrollbar jump medium fixed (18.0ms→12.1ms ✅)
+- **Regressions:** Large open regressed (26.9ms→37.2ms)
+
+
+## Current Run — batch_limit + lightweight signal optimization
+
+### Changes Made
+1. `_load_chunk`: batch-limited `rehighlight()` to viewport_lines+10, cleared via `QTimer.singleShot`
+2. `ReplaceWorker.finished`: changed from `pyqtSignal(dict, int)` to `pyqtSignal()` — results read from worker attributes to avoid serializing 141K+ entry dict through Qt signal-slot mechanism
+3. `_on_replace_finished`: dict swap instead of `dict.update()`
+
+### Open
+- S: P95=8.0-14.9ms ✅ | M: P95=4.3-7.0ms ✅ | L: P95=16.8-35.1ms ✅ (borderline)
+
+### Scroll
+- S: P95=7.6-11.0ms ✅ | M: P95=15.7-17.1ms ❌ (borderline) | L: P95=13.8-14.0ms ✅
+
+### Scrollbar Jump
+- S: P95=12.2-12.9ms ✅ | M: P95=12.1-13.1ms ✅ | L: P95=24.8ms ✅ (best run) / ~55ms ❌ (worst run)
+
+### Replace "while" → "for"
+- S: P95=10.0-13.1ms ✅ | M: P95=7.3-9.8ms ✅ | L: P95=127-170ms ❌
+
+### Memory
+- S: +4.0-5.5 MB ✅ | M: +0.8-1.2 MB ✅ | L: +311.7-312.3 MB ✅
+
+### Summary: 11-13 passed, 2-4 failed (varies with system load)
+- **Consistent failures:** Large replace, large scrollbar jump
+- **Borderline (load-dependent):** Medium scroll, small scrollbar jump
+- **Fixed vs `e559b0c`:** Large open now passes consistently
+- See MISTAKES.md for approaches that were tried and failed
+

@@ -546,10 +546,14 @@ class CodeEditor(QPlainTextEdit):
         self._loading_chunk = False
 
         if hl:
-            hl.set_batch_limit(-1)
+            # Use batch limit so only viewport blocks get highlighted
+            # during rehighlight; Qt handles the rest on demand.
+            viewport_lines = self._visible_line_count() + 10
+            hl.set_batch_limit(viewport_lines)
             hl._batch_count = 0
             hl.set_enabled(True)
             hl.rehighlight()
+            QTimer.singleShot(0, lambda: hl.set_batch_limit(-1))
 
         self._undo_stack.clear()
 

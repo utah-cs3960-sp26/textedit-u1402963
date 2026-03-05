@@ -1,50 +1,51 @@
 # Open Performance Issues
 
-Benchmark run: commit `7388dcd` on `speed-3` branch. All tests run (no gating).
-**10 / 15 passed, 5 failed.** Target: P95 ≤ 16.67ms (60fps), large files ≤ 33ms (30fps).
+---
+
+## 1. Large File Replace — P95: 127-170ms (target ≤ 33ms) 🔴 CRITICAL
+
+**Status:** Partially fixed. Replace now runs on background thread (`ReplaceWorker`), signal is
+lightweight (`pyqtSignal()` with no args), and dict swap is O(1). The `_load_chunk` call in
+`_on_replace_finished` takes only ~22ms. **The remaining 100-150ms spike comes from the
+`QTimer.singleShot(0, lambda: hl.set_batch_limit(-1))` in `_load_chunk` — when the batch
+limit is cleared in the next frame, Qt cascades re-highlighting of ~960 off-screen blocks.**
+
+**Where:** `src/editor/code_editor.py` `_load_chunk()` line 556 — the deferred batch_limit clear.
+
+**What was tried and failed:** See MISTAKES.md for 7 failed approaches including:
+- `rehighlightBlock` per visible block (cascades to adjacent blocks)
+- Incremental batched rehighlighting (same cascade problem)
+- Never clearing batch_limit (visual regression)
+- Resetting `_batch_count` on scroll (worse performance)
+
+**Remaining fix ideas:**
+- Reduce `CHUNK_SIZE` from 1000 to e.g. 200 — fewer blocks to cascade through
+- Detach highlighter entirely during virtual mode and use a custom paint overlay
+- Use `QSyntaxHighlighter.setDocument(None)` to detach, load text, reattach with batch_limit
 
 ---
 
-## 1. Large File Replace — timed out (target ≤ 33ms) 🔴 CRITICAL
+## 2. Large Scrollbar Jump — P95: 24.8ms (best) / 55ms (worst) (target ≤ 33ms) 🔴 HIGH
 
-**What happens:** `VirtualDocument.replace_all()` in `src/editor/models/virtual_document.py:239-270` iterates all 1,377,419 lines synchronously on the main thread. Each line calls `get_line()` (mmap decode) then `re.subn()`. Blocks the GUI for ~8 seconds, exceeding the 15s test timeout.
+**Status:** Significantly improved by batch-limited `rehighlight()` in `_load_chunk`.
+Best run: P95=24.8ms ✅ PASS. But inconsistent — worst runs hit P95=55ms due to the same
+`QTimer.singleShot` batch_limit cascade as issue #1.
 
-**Why it's slow:** Pure Python loop over 1.37M lines with per-line string decode + regex.
+**Where:** Same as #1 — `_load_chunk()` deferred batch_limit clear.
 
-**Fix:** Move `replace_all` to a background `QThread` worker (same pattern as `FindWorker` in `src/editor/find_replace.py:22-48`). Worker builds a replacement dict off the main thread, emits `finished` signal with count. Main thread swaps dict into `_modified_lines` and reloads current chunk. Use `threading.Lock` on `_modified_lines`.
-
----
-
-## 2. Large Scrollbar Jump — P95: 97.6ms (target ≤ 33ms) 🔴 HIGH
-
-**What happens:** Each scrollbar jump calls `_load_chunk()` which does `super().setPlainText()` for 1000 lines AND `hl.rehighlight()` synchronously. With 6 jumps, the worst frames are 100-140ms.
-
-**Where:** `src/editor/code_editor.py` `_load_chunk()` lines 530-553. Line 540: `hl.rehighlight()` runs the tokenizer on all 1000 chunk blocks in one frame.
-
-**Fix:** Don't call `hl.rehighlight()` after `_load_chunk`. Instead set `batch_limit` to viewport size (~30) and let Qt lazily highlight visible blocks on paint. Remaining blocks highlight when scrolled into view.
+**Fix:** Same as #1 — solving the cascade problem fixes both issues.
 
 ---
 
-## 3. Medium Scroll — P95: 19.7ms (target ≤ 16.67ms) 🟡 MEDIUM
+## ~~3. Medium Scroll — P95: 19.7ms (target ≤ 16.67ms)~~ 🟢 MOSTLY FIXED
 
-**What happens:** Each PageDown/PageUp triggers viewport repaint + line number repaint + `highlightBlock` on newly-visible blocks. With 8,739 lines loaded, Qt's internal block geometry lookups are slightly slow.
-
-**Where:** `src/editor/code_editor.py` `line_number_area_paint_event()` and `src/editor/highlighters/document_highlighter.py` `highlightBlock()`.
-
-**Fix options:**
-- Throttle `_update_line_number_area` to coalesce rapid scroll repaints
-- Profile whether `highlightBlock` tokenizer or `blockBoundingRect` is the bottleneck
-- Consider reducing `_LOAD_CHUNK_SIZE` for deferred loading so less of the document is in Qt's block model
+**Status:** Passes in most runs (P95=10.6-15.7ms). Borderline under high system load.
 
 ---
 
-## 4. Small/Medium Scrollbar Jump — P95: 17.9ms / 18.0ms (target ≤ 16.67ms) 🟡 BORDERLINE
+## ~~4. Small/Medium Scrollbar Jump~~ 🟢 FIXED
 
-**What happens:** `scrollbar.setValue()` triggers immediate viewport + line number repaint. Even on 173 lines, worst frames hit 20-24ms. Shares repaint codepath with scroll.
-
-**Where:** Same as scroll — `_update_line_number_area()` and `line_number_area_paint_event()`.
-
-**Fix:** Same as medium scroll — likely the same optimization resolves both.
+**Status:** Both now pass consistently (S: P95=12.2ms, M: P95=12.1ms).
 
 ---
 
@@ -54,10 +55,16 @@ Benchmark run: commit `7388dcd` on `speed-3` branch. All tests run (no gating).
 - **Deferred chunk loading** (`_load_text`): shared by `setPlainText` and `bulk_set_text`, splits documents into 500-line chunks across frames
 - **`BulkReplaceCommand`**: clean undo/redo for replace-all using `bulk_set_text()` — no flags, no cursor overhead
 - **Virtual mode**: mmap-backed `VirtualDocument` with 1000-line chunks for large files
-- **`FindWorker`**: background thread for `find_all` in virtual mode — reuse pattern for `replace_all`
+- **`FindWorker`**: background thread for `find_all` in virtual mode
+- **`ReplaceWorker`**: background thread for `replace_all` in virtual mode — lightweight signal, results read from worker attributes
+- **Batch-limited `rehighlight()`**: highlights only viewport blocks (~50) initially, prevents 300-600ms cascade
+
+### What's not working
+- **`QTimer.singleShot(0, lambda: hl.set_batch_limit(-1))`**: clearing batch_limit causes Qt to cascade re-highlight ~960 blocks in one frame. This is the root cause of both remaining failures.
+- **`QSyntaxHighlighter` design**: Qt's highlighter is all-or-nothing — no API to highlight "just these blocks" without cascading state propagation to adjacent blocks.
 
 ### Libraries used
 - **PyQt6** — UI framework (QPlainTextEdit, QSyntaxHighlighter, QThread, QTimer)
 - **mmap** (stdlib) — memory-mapped file access for large files
 - **re** (stdlib) — regex for find/replace and syntax highlighting
-- **threading** (stdlib) — `threading.Event` for abort flags in `FindWorker`
+- **threading** (stdlib) — `threading.Event` for abort flags in workers

@@ -50,11 +50,13 @@ class FindWorker(QObject):
 class ReplaceWorker(QObject):
     """Runs replace-all on a background thread for virtual documents.
 
-    Builds a replacement dict independently, then emits it on completion
-    so the main thread can swap it in — no locks needed.
+    Builds a replacement dict independently, then emits a lightweight
+    signal on completion.  The main thread reads the results directly
+    from the worker attributes to avoid serializing a large dict
+    through the Qt signal-slot mechanism.
     """
 
-    finished = pyqtSignal(dict, int)  # (modified_lines_dict, replacement_count)
+    finished = pyqtSignal()
 
     def __init__(self, vdoc, pattern, replacement, case_sensitive, use_regex):
         super().__init__()
@@ -64,6 +66,8 @@ class ReplaceWorker(QObject):
         self._case_sensitive = case_sensitive
         self._use_regex = use_regex
         self._abort = threading.Event()
+        self.modifications = {}
+        self.count = 0
 
     def abort(self):
         self._abort.set()
@@ -79,7 +83,7 @@ class ReplaceWorker(QObject):
             try:
                 compiled = re.compile(pattern, flags)
             except re.error:
-                self.finished.emit({}, 0)
+                self.finished.emit()
                 return
         elif not self._case_sensitive:
             compiled = re.compile(re.escape(pattern), re.IGNORECASE)
@@ -102,7 +106,9 @@ class ReplaceWorker(QObject):
                 count += n
 
         if not self._abort.is_set():
-            self.finished.emit(modifications, count)
+            self.modifications = modifications
+            self.count = count
+            self.finished.emit()
 
 
 class FindReplaceBar(QWidget):
@@ -674,12 +680,16 @@ class FindReplaceBar(QWidget):
 
         return 0  # actual count delivered via _on_replace_finished
 
-    def _on_replace_finished(self, modifications, count):
+    def _on_replace_finished(self):
         """Handle results from the background replace worker."""
+        worker = self._replace_worker
+        modifications = worker.modifications if worker else {}
+        count = worker.count if worker else 0
+
         if count > 0:
             vdoc = self._editor.vdoc
             if vdoc:
-                vdoc._modified_lines.update(modifications)
+                vdoc._modified_lines = modifications
 
             self._editor._chunk_line_count = 0
             self._editor._load_chunk(
