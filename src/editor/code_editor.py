@@ -334,7 +334,9 @@ class CodeEditor(QPlainTextEdit):
 
         lines = text.split('\n')
         if len(lines) <= self._LOAD_CHUNK_SIZE:
+            self.blockSignals(True)
             super().setPlainText(text)
+            self.blockSignals(False)
             self._cached_ln_width = -1
             self._update_line_number_area_width(0)
             if hl:

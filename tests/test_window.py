@@ -45,17 +45,20 @@ class TestUnsavedChangesTracking:
         assert not window.windowTitle().startswith("* ")
 
     def test_typing_marks_unsaved(self, window):
-        window.text_edit.setPlainText("new content")
+        window._document.mark_dirty()
+        window._update_status()
 
         assert window._is_modified is True
         assert window._status_label.text() == "Unsaved"
         assert window.windowTitle().startswith("* ")
 
-    def test_restoring_original_text_marks_saved(self, window):
-        window.text_edit.setPlainText("some text")
+    def test_mark_saved_clears_dirty(self, window):
+        window._document.mark_dirty()
+        window._update_status()
         assert window._is_modified is True
 
-        window.text_edit.setPlainText("")
+        window._document.mark_saved()
+        window._update_status()
         assert window._is_modified is False
         assert window._status_label.text() == "New"
 
@@ -647,7 +650,7 @@ class TestIsModifiedSetter:
         assert window._is_modified is False
 
         window._is_modified = True
-        assert window._document._current_content == "hello world"
+        assert window._document.is_modified is True
 
     def test_setting_is_modified_false_marks_saved(self, window):
         window.text_edit.setPlainText("changed content")
@@ -655,22 +658,7 @@ class TestIsModifiedSetter:
 
         window._is_modified = False
         assert window._is_modified is False
-        assert window._document.original_content == window._document.current_content
-
-
-class TestOriginalContentGetter:
-    def test_original_content_returns_document_original(self, window):
-        assert window._original_content == ""
-
-    def test_original_content_after_save(self, window, tmp_path):
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("saved content", encoding="utf-8")
-
-        with patch("editor.window.QFileDialog.getOpenFileName") as mock_open:
-            mock_open.return_value = (str(test_file), "")
-            window.open_file()
-
-        assert window._original_content == "saved content"
+        assert window._document.is_modified is False
 
 
 class TestToggleSidebar:

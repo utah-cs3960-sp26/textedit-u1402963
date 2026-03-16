@@ -81,13 +81,9 @@ class MainWindow(QMainWindow):
     @_is_modified.setter
     def _is_modified(self, value):
         if value:
-            self._document._current_content = self.text_edit.toPlainText()
+            self._document.mark_dirty()
         else:
             self._document.mark_saved()
-
-    @property
-    def _original_content(self):
-        return self._document.original_content
 
     def _setup_central_widget(self):
         container = QWidget()
@@ -157,12 +153,14 @@ class MainWindow(QMainWindow):
         self.sidebar.focus_search()
 
     def _setup_highlighter(self, file_path: str = "", content: str = ""):
+        self._suppress_modified = True
         if self.highlighter:
             self.highlighter.setDocument(None)
         self.highlighter = LanguageDetector.get_highlighter(
             self.text_edit.document(), file_path, content
         )
         self.text_edit.set_highlighter(self.highlighter)
+        self._suppress_modified = False
 
         # In virtual mode, use viewport highlighter instead of QSyntaxHighlighter
         if self.text_edit.virtual_mode:
@@ -336,7 +334,9 @@ class MainWindow(QMainWindow):
         for key, color in settings.syntax_colors.items():
             style_registry.set_color(SYNTAX_STYLE_KEYS[key], color)
         if self.highlighter:
+            self._suppress_modified = True
             self.highlighter.rehighlight()
+            self._suppress_modified = False
         self._apply_shortcuts(settings.shortcuts)
 
     def _apply_shortcuts(self, shortcuts: dict[str, str]) -> None:
@@ -359,8 +359,7 @@ class MainWindow(QMainWindow):
             return
         if self.text_edit.virtual_mode:
             return
-        current_content = self.text_edit.toPlainText()
-        self._document.current_content = current_content
+        self._document.mark_dirty()
         self._update_status()
 
     def _update_status(self):
@@ -520,8 +519,7 @@ class MainWindow(QMainWindow):
 
     def _sync_document_after_load(self):
         """Re-sync document model with actual editor content and update status."""
-        actual = self.text_edit.toPlainText()
-        self._document.set_content(actual, mark_as_saved=True)
+        self._document.set_content("", mark_as_saved=True)
         self._suppress_modified = False
         self._update_status()
 
