@@ -476,6 +476,7 @@ class CodeEditor(QPlainTextEdit):
         """Switch to virtual mode backed by a VirtualDocument."""
         self._vdoc = vdoc
         self._virtual_mode = True
+        self._virtual_dirty = False
         self._virtual_scrollbar = scrollbar
         self._chunk_start = 0
         self._chunk_line_count = 0
@@ -500,11 +501,24 @@ class CodeEditor(QPlainTextEdit):
         self._load_chunk(0)
         self._update_line_number_area_width(0)
 
+        # Re-highlight viewport after any edit so typed text gets coloured
+        self.textChanged.connect(self._on_virtual_text_changed)
+
+    def _on_virtual_text_changed(self):
+        """Handle text changes in virtual mode (user edits only, not chunk loads)."""
+        if self._viewport_highlighter:
+            self._viewport_highlighter.clear_cache()
+            self._viewport_highlighter.request_highlight()
+
     def exit_virtual_mode(self):
         """Leave virtual mode and restore normal editor behavior."""
         if not self._virtual_mode:
             return
         self._save_chunk_edits()
+        try:
+            self.textChanged.disconnect(self._on_virtual_text_changed)
+        except TypeError:
+            pass
         if self._virtual_scrollbar:
             try:
                 self._virtual_scrollbar.valueChanged.disconnect(self._on_virtual_scroll)
@@ -521,6 +535,7 @@ class CodeEditor(QPlainTextEdit):
             hl.setDocument(self.document())
             hl._suppress_rehighlight = False
         self._virtual_mode = False
+        self._virtual_dirty = False
         self._vdoc = None
         self._chunk_start = 0
         self._chunk_line_count = 0

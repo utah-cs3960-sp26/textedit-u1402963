@@ -358,12 +358,14 @@ class MainWindow(QMainWindow):
         if self._suppress_modified:
             return
         if self.text_edit.virtual_mode:
-            return
-        self._document.mark_dirty()
+            self.text_edit._virtual_dirty = True
+        else:
+            self._document.mark_dirty()
         self._update_status()
 
     def _update_status(self):
-        if self._document.is_modified:
+        is_dirty = self._document.is_modified or getattr(self.text_edit, '_virtual_dirty', False)
+        if is_dirty:
             self._status_label.setText("Unsaved")
             self._status_label.setStyleSheet("color: #8B0000; font-weight: bold;")
         elif not self._document.file_path:
@@ -378,7 +380,8 @@ class MainWindow(QMainWindow):
         base_title = "Text Editor 9000"
         if self._document.file_path:
             base_title = f"Text Editor 9000 - {self._document.file_path}"
-        if self._document.is_modified:
+        is_dirty = self._document.is_modified or getattr(self.text_edit, '_virtual_dirty', False)
+        if is_dirty:
             self.setWindowTitle(f"* {base_title}")
         else:
             self.setWindowTitle(base_title)
@@ -547,10 +550,14 @@ class MainWindow(QMainWindow):
 
     def _finish_large_file_setup(self, file_path: str):
         """Deferred highlighter setup after virtual mode load."""
+        self._suppress_modified = True
         chunk_text = self.text_edit.toPlainText()
         self._setup_highlighter(file_path, chunk_text)
         if self.highlighter:
             self.highlighter.set_batch_limit(-1)
+        self.text_edit._virtual_dirty = False
+        self._suppress_modified = False
+        self._update_status()
 
     def _close_virtual_doc(self):
         """Clean up any active virtual document."""
@@ -595,8 +602,12 @@ class MainWindow(QMainWindow):
             file_path = self._document.file_path
             success, error_msg = self._controller.save_file(file_path, content)
             if success:
-                self._update_status()
                 self._setup_highlighter(self._document.file_path)
+                self._suppress_modified = True
+                self._document.mark_saved()
+                self._update_status()
+                QApplication.processEvents()
+                self._suppress_modified = False
             else:
                 QMessageBox.critical(self, "Error", error_msg)
         else:
@@ -608,6 +619,7 @@ class MainWindow(QMainWindow):
         try:
             self._vdoc.save()
             self._document.set_content("", mark_as_saved=True)
+            self.text_edit._virtual_dirty = False
             self._update_status()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save file: {e}")
@@ -639,8 +651,12 @@ class MainWindow(QMainWindow):
 
         success, error_msg = self._controller.save_file(file_path, content)
         if success:
-            self._update_status()
             self._setup_highlighter(self._document.file_path)
+            self._suppress_modified = True
+            self._document.mark_saved()
+            self._update_status()
+            QApplication.processEvents()
+            self._suppress_modified = False
         else:
             QMessageBox.critical(self, "Error", error_msg)
 

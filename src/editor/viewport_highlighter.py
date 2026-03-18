@@ -131,14 +131,17 @@ class ViewportHighlighter:
             block = block.next()
             bn += 1
 
-        # Mark visible region dirty so Qt repaints
+        # Mark visible region dirty so Qt repaints.
+        # Block signals to prevent textChanged from re-triggering _mark_modified.
         if first_num <= last_num:
             first_block = doc.findBlockByNumber(first_num)
             last_block = doc.findBlockByNumber(last_num)
             if first_block.isValid() and last_block.isValid():
                 start_pos = first_block.position()
                 end_pos = last_block.position() + last_block.length()
+                editor.blockSignals(True)
                 doc.markContentsDirty(start_pos, end_pos - start_pos)
+                editor.blockSignals(False)
 
     def request_highlight(self):
         """Coalesced highlight request — at most once per event loop tick."""
